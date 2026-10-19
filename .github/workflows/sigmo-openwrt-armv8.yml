@@ -1,15 +1,14 @@
-# sigmo 社区版 —— OpenWrt ARMv8 (aarch64 / musl) 二进制编译 workflow
+# sigmo 社区版 —— OpenWrt ARMv8 (aarch64) 二进制编译 workflow（修正版）
 #
 # 放置位置：仓库根目录 .github/workflows/sigmo-openwrt-armv8.yml
-# 触发方式：手动触发（workflow_dispatch），或推送 v* 标签时触发并自动上传产物
+# 触发方式：手动触发（workflow_dispatch），或推送 v* 标签时触发并上传产物
 #
-# 为什么不能直接用仓库自带的 build.yml 的 linux-arm64：
-#   sigmo 用 ncruces/go-sqlite3（purego dlopen 动态加载 libsqlite3），
-#   build.yml 里的是 glibc 静态版，OpenWrt 是 musl 环境，跑不起来。
-#   官方 scripts/build-pro.sh 对 *-musl 目标（含 arm64）做了三件事，这里照搬到社区版：
-#     1. 用临时 modfile 把 ebitengine/purego 替换成本地副本并 patch 成 musl libc 名称
-#     2. ldflags 加 -I /lib/ld-musl-aarch64.so.1 设置 musl 动态解释器（使 dlopen 可用）
-#     3. 加 -a 强制全量重编（因为 purego 被替换）
+# 为什么这一版去掉了 musl patch / -I 解释器：
+#   sigmo 社区版的 SQLite 用的是 ncruces/go-sqlite3 —— cgo-free 的 WASM 后端，
+#   SQLite 直接编译进二进制（纯 Go + x/sys），不 dlopen 任何外部库。
+#   purego（ebitengine/purego）只存在于 pro 版依赖（pro/go.mod）里，社区版没有。
+#   因此社区版产物是“全静态、自包含”的，OpenWrt(ARMv8/aarch64, musl) 无需安装任何运行时包，
+#   更不需要 libsqlite3（之前那个 "Unknown package 'libsqlite3'" 可以忽略，本来就不该装）。
 
 name: Build sigmo for OpenWrt ARMv8 (aarch64)
 
@@ -23,7 +22,7 @@ permissions:
 
 jobs:
   build-openwrt-armv8:
-    name: Build sigmo (community) OpenWrt armv8
+    name: Build sigmo (community) static armv8
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,6 +33,7 @@ jobs:
       - name: Setup Bun (build frontend)
         uses: oven-sh/setup-bun@v2
 
+      # go-version-file 会按 go.mod 自动安装需要的 Go 工具链（go 1.27.x）
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -48,23 +48,9 @@ jobs:
       - name: Generate assets (carrier/euicc/sqlc)
         run: go generate ./...
 
-      - name: Patch purego for musl and build OpenWrt armv8 binary
+      - name: Build static OpenWrt armv8 binary
         run: |
           set -euo pipefail
-
-          # --- 1. 用临时 modfile 替换 purego 为可 patch 的本地副本 ---
-          tmp="$(mktemp -d)"
-          purego_dir="$(go list -m -f '{{.Dir}}' github.com/ebitengine/purego)"
-          cp -R "${purego_dir}" "${tmp}/purego"
-          cp go.mod "${tmp}/go.mod"
-          cp go.sum "${tmp}/go.sum"
-          go mod edit -modfile="${tmp}/go.mod" \
-            -replace=github.com/ebitengine/purego="${tmp}/purego"
-
-          # --- 2. 把 purego 的 dlopen 库名 patch 成 musl aarch64 版本 ---
-          TARGETARCH=arm64 ./scripts/patch-purego-musl.sh "${tmp}/go.mod"
-
-          # --- 3. 版本与构建信息 ldflags（保持与官方 build.yml 一致） ---
           version="dev-${GITHUB_SHA::8}"
           distribution="developer"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
@@ -72,20 +58,21 @@ jobs:
             distribution="standalone"
           fi
           ldflags="-w -s"
-          ldflags+=" -I /lib/ld-musl-aarch64.so.1"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Version=${version}"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Commit=${GITHUB_SHA}"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Channel=stable"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Edition=community"
-          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Target=linux-arm64-musl"
+          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Target=linux-arm64"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Distribution=${distribution}"
-
-          # --- 4. 交叉编译：musl 目标，需 -a 全量重编 + 指定动态解释器 ---
+          # 全静态交叉编译：不需要 musl 解释器，不需要 libsqlite3
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-            go build -modfile="${tmp}/go.mod" -a -trimpath -ldflags="${ldflags}" \
-            -o "sigmo-linux-arm64-openwrt" .
+            go build -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
 
+      - name: Inspect binary (confirm static)
+        run: |
           file sigmo-linux-arm64-openwrt
+          # 静态链接应输出 "not a dynamic executable"；若出现 interpreter 说明非静态，需排查
+          readelf -d sigmo-linux-arm64-openwrt 2>/dev/null | grep -iE "NEEDED|INTERP" || echo "OK: no dynamic deps / no interpreter (fully static)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
