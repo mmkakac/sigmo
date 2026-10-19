@@ -1,0 +1,111 @@
+# sigmo 社区版 —— OpenWrt ARMv8 (aarch64 / musl) 二进制编译 workflow
+#
+# 放置位置：仓库根目录 .github/workflows/sigmo-openwrt-armv8.yml
+# 触发方式：手动触发（workflow_dispatch），或推送 v* 标签时触发并自动上传产物
+#
+# 为什么不能直接用仓库自带的 build.yml 的 linux-arm64：
+#   sigmo 用 ncruces/go-sqlite3（purego dlopen 动态加载 libsqlite3），
+#   build.yml 里的是 glibc 静态版，OpenWrt 是 musl 环境，跑不起来。
+#   官方 scripts/build-pro.sh 对 *-musl 目标（含 arm64）做了三件事，这里照搬到社区版：
+#     1. 用临时 modfile 把 ebitengine/purego 替换成本地副本并 patch 成 musl libc 名称
+#     2. ldflags 加 -I /lib/ld-musl-aarch64.so.1 设置 musl 动态解释器（使 dlopen 可用）
+#     3. 加 -a 强制全量重编（因为 purego 被替换）
+
+name: Build sigmo for OpenWrt ARMv8 (aarch64)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-openwrt-armv8:
+    name: Build sigmo (community) OpenWrt armv8
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun (build frontend)
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build frontend
+        run: |
+          cd apps/web
+          bun install --frozen-lockfile
+          bun run build --mode prod
+
+      - name: Generate assets (carrier/euicc/sqlc)
+        run: go generate ./...
+
+      - name: Patch purego for musl and build OpenWrt armv8 binary
+        run: |
+          set -euo pipefail
+
+          # --- 1. 用临时 modfile 替换 purego 为可 patch 的本地副本 ---
+          tmp="$(mktemp -d)"
+          purego_dir="$(go list -m -f '{{.Dir}}' github.com/ebitengine/purego)"
+          cp -R "${purego_dir}" "${tmp}/purego"
+          cp go.mod "${tmp}/go.mod"
+          cp go.sum "${tmp}/go.sum"
+          go mod edit -modfile="${tmp}/go.mod" \
+            -replace=github.com/ebitengine/purego="${tmp}/purego"
+
+          # --- 2. 把 purego 的 dlopen 库名 patch 成 musl aarch64 版本 ---
+          TARGETARCH=arm64 ./scripts/patch-purego-musl.sh "${tmp}/go.mod"
+
+          # --- 3. 版本与构建信息 ldflags（保持与官方 build.yml 一致） ---
+          version="dev-${GITHUB_SHA::8}"
+          distribution="developer"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME}"
+            distribution="standalone"
+          fi
+          ldflags="-w -s"
+          ldflags+=" -I /lib/ld-musl-aarch64.so.1"
+          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Version=${version}"
+          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Commit=${GITHUB_SHA}"
+          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Channel=stable"
+          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Edition=community"
+          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Target=linux-arm64-musl"
+          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Distribution=${distribution}"
+
+          # --- 4. 交叉编译：musl 目标，需 -a 全量重编 + 指定动态解释器 ---
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+            go build -modfile="${tmp}/go.mod" -a -trimpath -ldflags="${ldflags}" \
+            -o "sigmo-linux-arm64-openwrt" .
+
+          file sigmo-linux-arm64-openwrt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sigmo-linux-arm64-openwrt
+          path: sigmo-linux-arm64-openwrt
+          if-no-files-found: error
+
+  # 可选：打 tag 时发一个 release 附上 OpenWrt 产物
+  release-openwrt:
+    name: Publish OpenWrt release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-openwrt-armv8
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: sigmo-linux-arm64-openwrt
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: sigmo-linux-arm64-openwrt
