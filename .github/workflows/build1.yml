@@ -1,0 +1,30 @@
+name: Build sigmo OpenWrt ARMv8
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build aarch64(ARMv8 musl)
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: arm64
+        run: go build -o sigmo .
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigmo-aarch64-openwrt
+          path: sigmo
