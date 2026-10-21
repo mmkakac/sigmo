@@ -49,6 +49,7 @@ const en = {
     },
   },
   communication: {
+    markAllRead: 'Mark all as read',
     actions: 'More actions',
     modem: 'Modem',
     chooseModem: 'Choose a line',
@@ -279,6 +280,10 @@ const en = {
     notificationKeywordDescription:
       'Suppress incoming SMS notifications whose text contains any of these keywords. One match is enough; the SMS is still stored.',
     notificationKeywordPlaceholder: 'Add a keyword and press Enter…',
+    notificationNumberLabel: 'SMS Filter Numbers',
+    notificationNumberDescription:
+      'Incoming SMS from any of these sender numbers is not pushed. Messages are still stored.',
+    notificationNumberPlaceholder: 'Add a sender number and press Enter…',
 
     title: 'Settings',
     description:
@@ -660,6 +665,15 @@ const en = {
       },
     },
   },
+    sms: {
+      label: 'SMS Forward',
+      description: 'Forward received SMS to phone numbers as SMS.',
+      recipients: {
+        label: 'Forward to numbers',
+        description: 'Received SMS are forwarded as text messages to these numbers.',
+        placeholder: 'Add a phone number and press Enter…',
+      },
+    },
   messages: {
     title: 'Device Messages',
     subtitle: 'View inbound messages from connected modems.',
@@ -1159,7 +1173,9 @@ const en = {
       internetAlwaysOnLabel: 'Always On',
       internetAlwaysOnDescription:
         'Reconnect with these settings after an unexpected disconnect or system restart.',
-      internetConnect: 'Connect',
+      internetNoInterfaceLabel: 'Register without a network interface',
+      internetNoInterfaceDescription:
+        'Connect to the Internet without configuring any kernel interface, address, or route, so a data-less SIM can register without consuming traffic. On by default.',      internetConnect: 'Connect',
       internetDisconnect: 'Disconnect',
       internetConnected: 'Connected',
       internetDisconnected: 'Disconnected',
@@ -1202,7 +1218,13 @@ const en = {
       aliasDescription: 'A friendly name for this modem.',
       mssLabel: 'MSS',
       mssPlaceholder: '64 - 254',
-      mssDescription: 'APDU payload size per transfer (64-254).',
+      autoUnlockLabel: 'Auto-unlock SIM',
+    autoUnlockDescription: 'Save the PIN after a successful unlock and unlock automatically next time the SIM reports locked.',
+    simPinLabel: 'SIM PIN',
+    simPinPlaceholder: 'Enter SIM PIN (submitted only when auto-unlock is on)',
+    simPinDescription: 'With auto-unlock on, a successful manual unlock saves the PIN; leave empty to keep the saved PIN.',
+    simPinSavedDescription: 'PIN saved; the SIM will be unlocked automatically next time.',
+    mssDescription: 'APDU payload size per transfer (64-254).',
       wifiCallingTitle: 'Wi-Fi Calling',
       wifiCallingLabel: 'Enable Wi-Fi Calling',
       wifiCallingDescription: 'Connect this profile to IMS through the selected outer network.',

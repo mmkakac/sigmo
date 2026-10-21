@@ -78,6 +78,9 @@ export const useMessageApi = () => {
   const deleteConversation = (id: string) =>
     fetchJson<void>(`conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
+  const markAllRead = () =>
+    fetchJson<MessageState>('conversations/read-all', { method: 'POST' })
+
   return {
     getMessages,
     getMessagesByParticipant,
@@ -87,5 +90,6 @@ export const useMessageApi = () => {
     getConversationMessages,
     updateConversation,
     deleteConversation,
+    markAllRead,
   }
 }

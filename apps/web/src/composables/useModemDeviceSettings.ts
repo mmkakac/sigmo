@@ -15,6 +15,9 @@ export const useModemDeviceSettings = ({ modemId, onSuccess }: Options) => {
 
   const settingsAlias = ref('')
   const settingsMss = ref('')
+  const settingsAutoUnlock = ref(false)
+  const settingsSimPin = ref('')
+  const settingsSimPinSaved = ref(false)
   const isSettingsLoading = ref(false)
   const isSettingsUpdating = ref(false)
 
@@ -26,6 +29,9 @@ export const useModemDeviceSettings = ({ modemId, onSuccess }: Options) => {
   const resetSettings = () => {
     settingsAlias.value = ''
     settingsMss.value = ''
+    settingsAutoUnlock.value = false
+    settingsSimPin.value = ''
+    settingsSimPinSaved.value = false
   }
 
   const fetchSettings = async (id: string) => {
@@ -36,6 +42,9 @@ export const useModemDeviceSettings = ({ modemId, onSuccess }: Options) => {
       const payload: ModemSettings | undefined = data.value
       settingsAlias.value = payload?.alias ?? ''
       settingsMss.value = payload?.mss ? String(payload.mss) : ''
+      settingsAutoUnlock.value = payload?.autoUnlockSim ?? false
+      settingsSimPin.value = ''
+      settingsSimPinSaved.value = payload?.simPinSaved ?? false
     } finally {
       isSettingsLoading.value = false
     }
@@ -50,6 +59,10 @@ export const useModemDeviceSettings = ({ modemId, onSuccess }: Options) => {
       const payload: ModemSettings = {
         alias: settingsAlias.value.trim(),
         mss,
+        autoUnlockSim: settingsAutoUnlock.value,
+      }
+      if (settingsAutoUnlock.value && settingsSimPin.value.trim().length > 0) {
+        payload.simPin = settingsSimPin.value.trim()
       }
       await modemApi.updateSettings(targetId, payload)
       await fetchSettings(targetId)
@@ -81,6 +94,9 @@ export const useModemDeviceSettings = ({ modemId, onSuccess }: Options) => {
   return {
     settingsAlias,
     settingsMss,
+    settingsAutoUnlock,
+    settingsSimPin,
+    settingsSimPinSaved,
     isSettingsLoading,
     isSettingsUpdating,
     isMssValid,

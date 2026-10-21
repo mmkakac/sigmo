@@ -7,10 +7,8 @@ import (
 
 	appconnectivity "github.com/damonto/sigmo/internal/app/connectivity"
 	"github.com/damonto/sigmo/internal/app/forwarder"
-	"github.com/damonto/sigmo/internal/app/mcpserver"
 	"github.com/damonto/sigmo/internal/app/modemstatus"
 	"github.com/damonto/sigmo/internal/app/router"
-	appupdate "github.com/damonto/sigmo/internal/app/update"
 	"github.com/damonto/sigmo/internal/pkg/internet"
 	"github.com/damonto/sigmo/internal/pkg/lpa"
 	"github.com/damonto/sigmo/internal/pkg/message"
@@ -20,7 +18,6 @@ import (
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
 	"github.com/damonto/sigmo/internal/pkg/ussd"
-	"github.com/damonto/sigmo/internal/pkg/webpush"
 )
 
 type Extension func(context.Context, *Runtime) error
@@ -43,15 +40,15 @@ type Runtime struct {
 	Relay               *forwarder.Relay
 	NetworkPreferences  *networkprefs.Store
 	Storage             *storage.Store
-	WebPush             *webpush.Client
+	WebPush             webPushClient
 	Reminders           *reminder.Scheduler
-	UpdateSource        appupdate.Source
-	License             appupdate.LicenseProvider
+	UpdateSource        updateSource
+	License             licenseProvider
 
 	messageRoute          message.Route
 	ussdRoute             ussd.Route
 	modemOverview         []modemstatus.Extension
-	mcpTools              []mcpserver.Extension
+	mcpTools              []mcpToolsExtension
 	routes                []router.Extension
 	runners               []namedRunner
 	cleanups              []Cleanup
@@ -79,7 +76,7 @@ func (r *Runtime) AddModemOverview(extensions ...modemstatus.Extension) {
 	r.modemOverview = append(r.modemOverview, extensions...)
 }
 
-func (r *Runtime) AddMCPTools(extensions ...mcpserver.Extension) {
+func (r *Runtime) AddMCPTools(extensions ...mcpToolsExtension) {
 	r.mcpTools = append(r.mcpTools, extensions...)
 }
 
@@ -113,10 +110,10 @@ func (r *Runtime) AddFeatures(features ...string) {
 	r.features = append(r.features, features...)
 }
 
-func (r *Runtime) SetUpdateSource(source appupdate.Source) {
+func (r *Runtime) SetUpdateSource(source updateSource) {
 	r.UpdateSource = source
 }
 
-func (r *Runtime) SetLicenseProvider(provider appupdate.LicenseProvider) {
+func (r *Runtime) SetLicenseProvider(provider licenseProvider) {
 	r.License = provider
 }

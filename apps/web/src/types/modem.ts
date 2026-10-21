@@ -56,6 +56,9 @@ export type Modem = ModemApiResponse
 export type ModemSettings = {
   alias: string
   mss: number
+  autoUnlockSim?: boolean
+  simPin?: string
+  simPinSaved?: boolean
 }
 
 export type ModemSettingsResponse = ModemSettings

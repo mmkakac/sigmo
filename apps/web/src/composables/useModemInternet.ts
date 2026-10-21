@@ -39,6 +39,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
   const internetDefaultRoute = ref(false)
   const internetProxyEnabled = ref(false)
   const internetAlwaysOn = ref(false)
+  const internetNoInterface = ref(true)
   const isInternetLoading = ref(false)
   const isInternetConnecting = ref(false)
   const isInternetDisconnecting = ref(false)
@@ -84,6 +85,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
     internetDefaultRoute.value = false
     internetProxyEnabled.value = false
     internetAlwaysOn.value = false
+    internetNoInterface.value = true
   }
 
   const connectionKey = (connection: InternetConnectionResponse | null) => {
@@ -110,6 +112,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
       internetDefaultRoute.value = connection?.defaultRoute ?? false
       internetProxyEnabled.value = connection?.proxyEnabled ?? false
       internetAlwaysOn.value = connection?.alwaysOn ?? false
+      internetNoInterface.value = connection?.noInterface ?? true
     }
     if (connection?.status !== 'connected' || publicConnectionKey.value !== key) {
       internetPublicInfo.value = null
@@ -180,6 +183,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
         defaultRoute: internetDefaultRoute.value,
         proxyEnabled: internetProxyEnabled.value,
         alwaysOn: internetAlwaysOn.value,
+        noInterface: internetNoInterface.value,
       })
       const connection = data.value ?? null
       applyConnection(connection)
@@ -221,10 +225,12 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
       defaultRoute: internetDefaultRoute.value,
       proxyEnabled: internetProxyEnabled.value,
       alwaysOn: internetAlwaysOn.value,
+      noInterface: internetNoInterface.value,
     }
     internetDefaultRoute.value = next.defaultRoute
     internetProxyEnabled.value = next.proxyEnabled
     internetAlwaysOn.value = next.alwaysOn
+    internetNoInterface.value = next.noInterface
     try {
       const { data } = await internetApi.updatePreferences(targetId, next)
       if (modemId.value !== targetId || preferenceRequestEpoch.value !== mutationEpoch) return
@@ -235,6 +241,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
       internetDefaultRoute.value = previous.defaultRoute
       internetProxyEnabled.value = previous.proxyEnabled
       internetAlwaysOn.value = previous.alwaysOn
+      internetNoInterface.value = previous.noInterface
       console.error('[useModemInternet] Failed to update connection preferences:', err)
       onError?.(t('modemDetail.settings.internetPreferencesUpdateFailed'))
     } finally {
@@ -283,6 +290,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
     internetDefaultRoute,
     internetProxyEnabled,
     internetAlwaysOn,
+    internetNoInterface,
     isInternetLoading,
     isInternetConnecting,
     isInternetDisconnecting,

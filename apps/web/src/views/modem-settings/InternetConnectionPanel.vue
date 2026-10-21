@@ -40,6 +40,7 @@ const apnAuth = defineModel<string>('apnAuth', { required: true })
 const defaultRoute = defineModel<boolean>('defaultRoute', { required: true })
 const proxyEnabled = defineModel<boolean>('proxyEnabled', { required: true })
 const alwaysOn = defineModel<boolean>('alwaysOn', { required: true })
+const noInterface = defineModel<boolean>('noInterface', { required: true })
 
 const { t } = useI18n()
 const advancedOpen = ref(false)
@@ -97,12 +98,14 @@ const updatePreference = (name: keyof InternetConnectionPreferencesPayload, valu
     if (name === 'defaultRoute') defaultRoute.value = value
     if (name === 'proxyEnabled') proxyEnabled.value = value
     if (name === 'alwaysOn') alwaysOn.value = value
+    if (name === 'noInterface') noInterface.value = value
     return
   }
   emit('update-preferences', {
     defaultRoute: name === 'defaultRoute' ? value : defaultRoute.value,
     proxyEnabled: name === 'proxyEnabled' ? value : proxyEnabled.value,
     alwaysOn: name === 'alwaysOn' ? value : alwaysOn.value,
+    noInterface: name === 'noInterface' ? value : noInterface.value,
   })
 }
 
@@ -371,6 +374,25 @@ const formatBytes = (bytes: number) => {
               :model-value="proxyEnabled"
               :disabled="isPreferenceInputDisabled"
               @update:model-value="updatePreference('proxyEnabled', $event === true)"
+            />
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1 space-y-1">
+              <Label for="modem-internet-no-interface">
+                {{ t('modemDetail.settings.internetNoInterfaceLabel') }}
+              </Label>
+              <p class="text-xs leading-5 text-muted-foreground">
+                {{ t('modemDetail.settings.internetNoInterfaceDescription') }}
+              </p>
+            </div>
+            <Switch
+              id="modem-internet-no-interface"
+              :model-value="noInterface"
+              :disabled="isPreferenceInputDisabled"
+              @update:model-value="updatePreference('noInterface', $event === true)"
             />
           </div>
         </div>

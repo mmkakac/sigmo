@@ -103,6 +103,39 @@ const cleanKeywords = (keywords: unknown[]) => {
           />
         </TagsInput>
       </div>
+      <div class="space-y-2 pt-4">
+        <Label for="settings-notifications-numbers">
+          {{ t('settings.notificationNumberLabel') }}
+        </Label>
+        <p class="text-sm text-muted-foreground">
+          {{ t('settings.notificationNumberDescription') }}
+        </p>
+        <TagsInput
+          id="settings-notifications-numbers"
+          :model-value="values.notifications.smsFilterNumbers ?? []"
+          :disabled="isSaving"
+          :delimiter="tagsInputDelimiter"
+          add-on-blur
+          add-on-paste
+          add-on-tab
+          @update:model-value="
+            values.notifications.smsFilterNumbers = cleanKeywords($event as unknown[])
+          "
+        >
+          <TagsInputItem
+            v-for="number in values.notifications.smsFilterNumbers ?? []"
+            :key="number"
+            :value="number"
+          >
+            <TagsInputItemText />
+            <TagsInputItemDelete />
+          </TagsInputItem>
+          <TagsInputInput
+            :placeholder="t('settings.notificationNumberPlaceholder')"
+            class="min-w-24"
+          />
+        </TagsInput>
+      </div>
       <div class="flex justify-end border-t pt-4">
         <SettingsSaveButton
           id="settings-notifications-save"

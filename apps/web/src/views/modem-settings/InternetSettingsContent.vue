@@ -37,6 +37,7 @@ const apnAuth = defineModel<string>('apnAuth', { required: true })
 const defaultRoute = defineModel<boolean>('defaultRoute', { required: true })
 const proxyEnabled = defineModel<boolean>('proxyEnabled', { required: true })
 const alwaysOn = defineModel<boolean>('alwaysOn', { required: true })
+const noInterface = defineModel<boolean>('noInterface', { required: true })
 
 const { t } = useI18n()
 
@@ -77,6 +78,7 @@ const handleAction = () => {
       v-model:default-route="defaultRoute"
       v-model:proxy-enabled="proxyEnabled"
       v-model:always-on="alwaysOn"
+      v-model:no-interface="noInterface"
       :connection="props.connection"
       :is-loading="props.isLoading"
       :is-connecting="props.isConnecting"

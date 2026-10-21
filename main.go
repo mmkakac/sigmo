@@ -11,7 +11,6 @@ import (
 
 	"github.com/damonto/sigmo/internal/app/buildinfo"
 	"github.com/damonto/sigmo/internal/app/server"
-	appupdate "github.com/damonto/sigmo/internal/app/update"
 )
 
 var (
@@ -40,7 +39,7 @@ func main() {
 		slog.Error("resolve executable", "error", err)
 		os.Exit(1)
 	}
-	if restored, err := appupdate.RecoverPending(executable); err != nil {
+	if restored, err := recoverPendingUpdate(executable); err != nil {
 		slog.Error("recover pending update", "error", err)
 		os.Exit(1)
 	} else if restored {

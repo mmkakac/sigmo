@@ -16,6 +16,7 @@ const connection: InternetConnectionResponse = {
   defaultRoute: true,
   proxyEnabled: false,
   alwaysOn: true,
+  noInterface: true,
   proxy: { enabled: false },
   interfaceName: 'wwan0',
   bearer: 1,
@@ -71,6 +72,7 @@ const mountPanel = () => {
       defaultRoute: true,
       proxyEnabled: false,
       alwaysOn: true,
+      noInterface: true,
       connection,
       isLoading: false,
       isConnecting: false,
@@ -102,7 +104,19 @@ describe('InternetConnectionPanel', () => {
     await wrapper.get('#modem-internet-default-route').setValue(false)
 
     expect(wrapper.emitted('update-preferences')).toEqual([
-      [{ defaultRoute: false, proxyEnabled: false, alwaysOn: true }],
+      [{ defaultRoute: false, proxyEnabled: false, alwaysOn: true, noInterface: true }],
+    ])
+  })
+
+  it('toggles the no-interface preference', async () => {
+    const wrapper = mountPanel()
+
+    expect(wrapper.get('#modem-internet-no-interface').attributes('disabled')).toBeUndefined()
+
+    await wrapper.get('#modem-internet-no-interface').setValue(false)
+
+    expect(wrapper.emitted('update-preferences')).toEqual([
+      [{ defaultRoute: true, proxyEnabled: false, alwaysOn: true, noInterface: false }],
     ])
   })
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Plus } from 'lucide-vue-next'
+import { CheckCheck, Plus } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
@@ -22,11 +22,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { useCommunicationHistory } from '@/composables/useCommunicationHistory'
+import { useMessageApi } from '@/apis/message'
 import { formatListTimestamp } from '@/lib/datetime'
 
 const props = defineProps<{ selectedThread?: string }>()
 const { t } = useI18n()
 const router = useRouter()
+const messageApi = useMessageApi()
 const {
   search,
   loading,
@@ -43,6 +45,19 @@ const {
 } = useCommunicationHistory('messages')
 const composing = ref(false)
 const deleting = ref('')
+const markingAllRead = ref(false)
+const markAllRead = async () => {
+  if (markingAllRead.value) return
+  markingAllRead.value = true
+  try {
+    await messageApi.markAllRead()
+    await load()
+  } catch (err) {
+    console.error('[CommunicationMessagesPanel] Failed to mark all read:', err)
+  } finally {
+    markingAllRead.value = false
+  }
+}
 const remove = async () => {
   const id = deleting.value
   deleting.value = ''
@@ -67,6 +82,15 @@ const remove = async () => {
       @click="composing = true"
     >
       <Plus class="size-4" />{{ t('modemDetail.messages.newConversation') }}
+    </Button>
+    <Button
+      v-if="supported && threads.length > 0"
+      variant="outline"
+      class="w-full gap-2"
+      :disabled="markingAllRead"
+      @click="markAllRead"
+    >
+      <CheckCheck class="size-4" />{{ t('communication.markAllRead') }}
     </Button>
     <ModemMessagesSearch v-model="search" />
     <CommunicationHistoryFilter

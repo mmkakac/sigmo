@@ -19,6 +19,7 @@ export interface SettingsAuthTest {
 export interface SettingsNotifications {
   channels: string[]
   smsFilterKeywords: string[]
+  smsFilterNumbers: string[]
 }
 
 export type SettingsProxy = {

@@ -5,60 +5,69 @@ import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { Button } from '@/components/ui/button'
+import { FEATURE, useCapabilities } from '@/composables/useCapabilities'
 
 const route = useRoute()
 const { t } = useI18n()
+const { hasFeature, fetchCapabilities } = useCapabilities()
+void fetchCapabilities()
 
-const items = computed(() => [
-  {
-    key: 'auth',
-    title: t('settings.authTitle'),
-    description: t('settings.authDescription'),
-    icon: Keyboard,
-    routeName: 'settings-auth',
-    to: { name: 'settings-auth' },
-  },
-  {
-    key: 'proxy',
-    title: t('settings.proxyTitle'),
-    description: t('settings.proxyDescription'),
-    icon: Globe2,
-    routeName: 'settings-proxy',
-    to: { name: 'settings-proxy' },
-  },
-  {
-    key: 'web-push',
-    title: t('settings.webPush.title'),
-    description: t('settings.webPush.description'),
-    icon: Bell,
-    routeName: 'settings-web-push',
-    to: { name: 'settings-web-push' },
-  },
-  {
-    key: 'notifications',
-    title: t('settings.notificationTitle'),
-    description: t('settings.notificationDescription'),
-    icon: MessageSquare,
-    routeName: 'settings-notifications',
-    to: { name: 'settings-notifications' },
-  },
-  {
-    key: 'mcp',
-    title: t('settings.mcp.title'),
-    description: t('settings.mcp.description'),
-    icon: Bot,
-    routeName: 'settings-mcp',
-    to: { name: 'settings-mcp' },
-  },
-  {
-    key: 'updates',
-    title: t('settings.updates.title'),
-    description: t('settings.updates.description'),
-    icon: Download,
-    routeName: 'settings-updates',
-    to: { name: 'settings-updates' },
-  },
-])
+const items = computed(() => {
+  const all = [
+    {
+      key: 'auth',
+      title: t('settings.authTitle'),
+      description: t('settings.authDescription'),
+      icon: Keyboard,
+      routeName: 'settings-auth',
+      to: { name: 'settings-auth' },
+    },
+    {
+      key: 'proxy',
+      title: t('settings.proxyTitle'),
+      description: t('settings.proxyDescription'),
+      icon: Globe2,
+      routeName: 'settings-proxy',
+      to: { name: 'settings-proxy' },
+    },
+    {
+      key: 'web-push',
+      title: t('settings.webPush.title'),
+      description: t('settings.webPush.description'),
+      icon: Bell,
+      routeName: 'settings-web-push',
+      to: { name: 'settings-web-push' },
+      feature: FEATURE.webPush,
+    },
+    {
+      key: 'notifications',
+      title: t('settings.notificationTitle'),
+      description: t('settings.notificationDescription'),
+      icon: MessageSquare,
+      routeName: 'settings-notifications',
+      to: { name: 'settings-notifications' },
+    },
+    {
+      key: 'mcp',
+      title: t('settings.mcp.title'),
+      description: t('settings.mcp.description'),
+      icon: Bot,
+      routeName: 'settings-mcp',
+      to: { name: 'settings-mcp' },
+      feature: FEATURE.mcp,
+    },
+    {
+      key: 'updates',
+      title: t('settings.updates.title'),
+      description: t('settings.updates.description'),
+      icon: Download,
+      routeName: 'settings-updates',
+      to: { name: 'settings-updates' },
+      feature: FEATURE.updates,
+    },
+  ]
+  return all.filter((item) => !item.feature || hasFeature(item.feature))
+})
 </script>
 
 <template>

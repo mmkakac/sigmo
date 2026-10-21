@@ -6,6 +6,9 @@ export const FEATURE = {
   esimTransfer: 'esimTransfer',
   volte: 'volte',
   wifiCalling: 'wifiCalling',
+  webPush: 'webPush',
+  mcp: 'mcp',
+  updates: 'updates',
 } as const
 
 const features = ref<string[]>([])

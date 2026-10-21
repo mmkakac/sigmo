@@ -18,7 +18,6 @@ import (
 	"github.com/damonto/sigmo/apps/web"
 	"github.com/damonto/sigmo/internal/app/buildinfo"
 	"github.com/damonto/sigmo/internal/app/httpapi"
-	appupdate "github.com/damonto/sigmo/internal/app/update"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
 )
@@ -27,7 +26,7 @@ import (
 // The Pro module supplies the implementation without creating a dependency
 // from the public module back to pro/.
 type Authorization interface {
-	appupdate.LicenseProvider
+	licenseProvider
 	// Start returns nil once Authorized can distinguish activation from normal
 	// startup. Operational failures must return an error, not require pairing.
 	Start(context.Context) error
@@ -98,9 +97,7 @@ func runActivationServer(ctx context.Context, cfg Config, authorization Authoriz
 		GracefulTimeout: 5 * time.Second,
 		ListenerAddrFunc: func(net.Addr) {
 			wg.Go(func() {
-				confirmUpdateHealthy(runCtx, func() error {
-					return appupdate.MarkHealthy(executable)
-				})
+				markUpdatedBinaryHealthy(runCtx, executable)
 			})
 		},
 	}

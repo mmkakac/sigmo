@@ -32,6 +32,7 @@ const connected = (
   defaultRoute: true,
   proxyEnabled: false,
   alwaysOn: false,
+  noInterface: true,
   proxy: { enabled: false },
   interfaceName: 'wwan0',
   bearer: 1,
@@ -77,6 +78,7 @@ describe('useModemInternet', () => {
       defaultRoute: false,
       proxyEnabled: true,
       alwaysOn: true,
+      noInterface: false,
     })
 
     expect(internet.internetDefaultRoute.value).toBe(false)
@@ -87,6 +89,7 @@ describe('useModemInternet', () => {
       defaultRoute: false,
       proxyEnabled: true,
       alwaysOn: true,
+      noInterface: false,
     })
 
     resolveUpdate?.({
@@ -95,6 +98,7 @@ describe('useModemInternet', () => {
           defaultRoute: false,
           proxyEnabled: true,
           alwaysOn: true,
+          noInterface: false,
           routeMetric: 1000,
         }),
       },
@@ -120,11 +124,13 @@ describe('useModemInternet', () => {
       defaultRoute: false,
       proxyEnabled: true,
       alwaysOn: true,
+      noInterface: false,
     })
 
     expect(internet.internetDefaultRoute.value).toBe(true)
     expect(internet.internetProxyEnabled.value).toBe(false)
     expect(internet.internetAlwaysOn.value).toBe(false)
+    expect(internet.internetNoInterface.value).toBe(true)
     expect(onError).toHaveBeenCalledWith('modemDetail.settings.internetPreferencesUpdateFailed')
     consoleError.mockRestore()
   })
@@ -155,6 +161,7 @@ describe('useModemInternet', () => {
       defaultRoute: false,
       proxyEnabled: true,
       alwaysOn: true,
+      noInterface: false,
     })
     resolvePoll?.({ data: { value: connected() } })
     await Promise.resolve()
@@ -190,6 +197,7 @@ describe('useModemInternet', () => {
       defaultRoute: false,
       proxyEnabled: false,
       alwaysOn: false,
+      noInterface: false,
     })
     modemId.value = 'modem-2'
     await vi.waitFor(() => expect(api.getCurrentConnection).toHaveBeenCalledTimes(2))

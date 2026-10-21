@@ -18,6 +18,9 @@ const { showFeedback } = useFeedbackBanner()
 const {
   settingsAlias,
   settingsMss,
+  settingsAutoUnlock,
+  settingsSimPin,
+  settingsSimPinSaved,
   isSettingsLoading,
   isSettingsUpdating,
   isMssValid,
@@ -39,6 +42,9 @@ const {
     <DeviceSettingsPanel
       v-model:alias="settingsAlias"
       v-model:mss="settingsMss"
+      v-model:auto-unlock="settingsAutoUnlock"
+      v-model:sim-pin="settingsSimPin"
+      v-model:sim-pin-saved="settingsSimPinSaved"
       :is-loading="isSettingsLoading"
       :is-updating="isSettingsUpdating"
       :is-valid="isMssValid"

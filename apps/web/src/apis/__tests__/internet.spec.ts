@@ -21,6 +21,7 @@ describe('useInternetApi', () => {
       defaultRoute: false,
       proxyEnabled: true,
       alwaysOn: true,
+      noInterface: true,
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -31,6 +32,7 @@ describe('useInternetApi', () => {
           defaultRoute: false,
           proxyEnabled: true,
           alwaysOn: true,
+          noInterface: true,
         }),
       }),
     )

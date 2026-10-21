@@ -10,6 +10,7 @@ export type InternetConnectionResponse = {
   defaultRoute: boolean
   proxyEnabled: boolean
   alwaysOn: boolean
+  noInterface: boolean
   proxy: InternetProxy
   interfaceName?: string
   bearer: number
@@ -45,9 +46,10 @@ export type ConnectInternetPayload = {
   defaultRoute: boolean
   proxyEnabled: boolean
   alwaysOn: boolean
+  noInterface: boolean
 }
 
 export type InternetConnectionPreferencesPayload = Pick<
   ConnectInternetPayload,
-  'defaultRoute' | 'proxyEnabled' | 'alwaysOn'
+  'defaultRoute' | 'proxyEnabled' | 'alwaysOn' | 'noInterface'
 >

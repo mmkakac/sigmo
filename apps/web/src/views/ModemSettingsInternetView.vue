@@ -26,6 +26,7 @@ const {
   internetDefaultRoute,
   internetProxyEnabled,
   internetAlwaysOn,
+  internetNoInterface,
   isInternetLoading,
   isInternetConnecting,
   isInternetDisconnecting,
@@ -59,6 +60,7 @@ const {
       v-model:default-route="internetDefaultRoute"
       v-model:proxy-enabled="internetProxyEnabled"
       v-model:always-on="internetAlwaysOn"
+      v-model:no-interface="internetNoInterface"
       :connection="internetConnection"
       :public-info="internetPublicInfo"
       :is-loading="isInternetLoading"

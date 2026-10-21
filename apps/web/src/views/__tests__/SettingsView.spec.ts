@@ -32,6 +32,17 @@ vi.mock('@/apis/settings', () => ({
   useSettingsApi: () => api,
 }))
 
+vi.mock('@/apis/capability', () => ({
+  useCapabilityApi: () => ({
+    getCapabilities: () =>
+      Promise.resolve({
+        data: {
+          value: { features: ['webPush', 'mcp', 'updates', 'contacts', 'messageThreads'] },
+        },
+      }),
+  }),
+}))
+
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => key,
@@ -61,7 +72,7 @@ const values = (): SettingsValues => ({
     accessAllowedSubjects: [],
     sessionMaxDays: 30,
   },
-  notifications: { channels: [], smsFilterKeywords: [] },
+  notifications: { channels: [], smsFilterKeywords: [], smsFilterNumbers: [] },
   proxy: {
     listenAddress: '127.0.0.1',
     httpPort: 8080,
@@ -616,6 +627,7 @@ describe('Settings notifications', () => {
     expect(api.updateNotifications).toHaveBeenLastCalledWith({
       channels: ['telegram'],
       smsFilterKeywords: [],
+      smsFilterNumbers: [],
     })
     expect(toast.success).toHaveBeenCalledWith('settings.saveSuccess')
     expect(api.updateAuth).not.toHaveBeenCalled()
@@ -627,6 +639,7 @@ describe('Settings notifications', () => {
     expect(api.updateNotifications).toHaveBeenLastCalledWith({
       channels: [],
       smsFilterKeywords: [],
+      smsFilterNumbers: [],
     })
 
     await navigate(router, '/settings/auth')

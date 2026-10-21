@@ -24,22 +24,17 @@ import (
 	"github.com/damonto/sigmo/internal/app/forwarder"
 	hnetwork "github.com/damonto/sigmo/internal/app/handler/network"
 	"github.com/damonto/sigmo/internal/app/httpapi"
-	"github.com/damonto/sigmo/internal/app/mcpauth"
-	"github.com/damonto/sigmo/internal/app/mcpserver"
 	"github.com/damonto/sigmo/internal/app/router"
-	appupdate "github.com/damonto/sigmo/internal/app/update"
 	"github.com/damonto/sigmo/internal/pkg/internet"
 	"github.com/damonto/sigmo/internal/pkg/lpa"
 	"github.com/damonto/sigmo/internal/pkg/message"
 	"github.com/damonto/sigmo/internal/pkg/modem"
 	"github.com/damonto/sigmo/internal/pkg/modemtask"
-	"github.com/damonto/sigmo/internal/pkg/nativepush"
 	"github.com/damonto/sigmo/internal/pkg/networkprefs"
 	"github.com/damonto/sigmo/internal/pkg/reminder"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
 	"github.com/damonto/sigmo/internal/pkg/validator"
-	"github.com/damonto/sigmo/internal/pkg/webpush"
 	wwanmodem "github.com/damonto/wwan-go/modem"
 )
 
@@ -245,7 +240,7 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 		return runActivationServer(ctx, cfg, authorization)
 	}
 
-	webPush, err := webpush.New(ctx, db)
+	webPush, err := newWebPushClient(ctx, db)
 	if err != nil {
 		return fmt.Errorf("configure web push: %w", err)
 	}
@@ -253,12 +248,8 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 	if err != nil {
 		return fmt.Errorf("configure reminders: %w", err)
 	}
-	nativePush, err := nativepush.New(nativepush.Config{
-		Storage:  db,
-		Settings: store,
-		Authorized: func() bool {
-			return authorization == nil || authorization.Authorized()
-		},
+	nativePush, err := newNativePushClient(db, store, func() bool {
+		return authorization == nil || authorization.Authorized()
 	})
 	if err != nil {
 		return fmt.Errorf("configure native push: %w", err)
@@ -322,6 +313,7 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 		License:               authorization,
 		airplaneModeLifecycle: internetConnector,
 	}
+	runtime.AddFeatures(featureFlags()...)
 	cleanups.Add(func(ctx context.Context) error {
 		if err := runtime.close(ctx); err != nil {
 			return fmt.Errorf("close extensions: %w", err)
@@ -333,16 +325,7 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 			return fmt.Errorf("configure extensions: %w", err)
 		}
 	}
-	if runtime.UpdateSource == nil {
-		runtime.UpdateSource = appupdate.NewGitHubSource(nil, "", cfg.Build.ReleasePublicKey)
-	}
-	updateController, err := appupdate.NewController(appupdate.ControllerConfig{
-		Build:    cfg.Build,
-		Settings: store,
-		Source:   runtime.UpdateSource,
-		License:  runtime.License,
-		Restart:  restart,
-	})
+	updateController, err := newUpdateController(cfg, runtime, store, restart)
 	if err != nil {
 		return fmt.Errorf("configure updater: %w", err)
 	}
@@ -359,44 +342,12 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 		networkHandler.Close()
 		return nil
 	})
-	mcpKeys, err := mcpauth.NewStore(db)
+	mcpController, mcpKeys, err := newMCPController(cfg, runtime, store, registry, internetConnector, lpaClients, relay, networkHandler, db, reminderScheduler)
 	if err != nil {
-		return fmt.Errorf("configure MCP API keys: %w", err)
-	}
-	mcpCatalog := mcpserver.NewCatalog()
-	if err := mcpserver.RegisterCoreTools(mcpCatalog, mcpserver.CoreToolsConfig{
-		Store:               store,
-		Registry:            registry,
-		InternetConnector:   internetConnector,
-		LPAClients:          lpaClients,
-		InternetConnections: runtime.internetConnections,
-		Relay:               relay,
-		Network:             networkHandler,
-		Storage:             db,
-		Reminders:           reminderScheduler,
-		MessageRoute:        runtime.messageRoute,
-		USSDRoute:           runtime.ussdRoute,
-		ModemOverview:       runtime.modemOverview,
-	}); err != nil {
-		return fmt.Errorf("configure MCP core tools: %w", err)
-	}
-	for _, extension := range runtime.mcpTools {
-		if err := extension(mcpCatalog); err != nil {
-			return fmt.Errorf("configure MCP extension: %w", err)
-		}
-	}
-	mcpController, err := mcpserver.New(mcpserver.Config{
-		BuildVersion: cfg.Build.Version,
-		Settings:     store,
-		Keys:         mcpKeys,
-		Storage:      db,
-		Catalog:      mcpCatalog,
-	})
-	if err != nil {
-		return fmt.Errorf("configure MCP server: %w", err)
+		return err
 	}
 	cleanups.Add(func(context.Context) error {
-		mcpController.Close()
+		closeMCPController(mcpController)
 		return nil
 	})
 	if err := router.Register(server, router.RegisterConfig{
@@ -428,14 +379,18 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 		return fmt.Errorf("configure router: %w", err)
 	}
 
-	startRunner("update", updateController.Run)
+	if updateController != nil {
+		startRunner("update", func(ctx context.Context) error { return runUpdateController(ctx, updateController) })
+	}
 
 	if authorization != nil {
 		startRunner("authorization", authorization.Run)
 	}
 
 	startRunner("reminder", reminderScheduler.Run)
-	startRunner("native push", nativePush.Run)
+	if nativePush != nil {
+		startRunner("native push", func(ctx context.Context) error { return runNativePush(ctx, nativePush) })
+	}
 	startRunner("sms storage defaults", func(ctx context.Context) error {
 		return modemtask.RunSMSStorageDefaults(ctx, registry, wwanmodem.MessageStorageDevice)
 	})
@@ -454,7 +409,7 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 		GracefulTimeout: 5 * time.Second,
 		ListenerAddrFunc: func(net.Addr) {
 			backgroundTasks.Go(func() {
-				confirmUpdateHealthy(ctx, updateController.MarkHealthy)
+				confirmUpdateHealth(ctx, updateController)
 			})
 		},
 	}

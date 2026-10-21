@@ -3,7 +3,6 @@ package router
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"strings"
 
@@ -22,7 +21,6 @@ import (
 	"github.com/damonto/sigmo/internal/app/handler/esim"
 	"github.com/damonto/sigmo/internal/app/handler/euicc"
 	hinternet "github.com/damonto/sigmo/internal/app/handler/internet"
-	"github.com/damonto/sigmo/internal/app/handler/mcpadmin"
 	"github.com/damonto/sigmo/internal/app/handler/message"
 	hmodem "github.com/damonto/sigmo/internal/app/handler/modem"
 	hnativepush "github.com/damonto/sigmo/internal/app/handler/nativepush"
@@ -30,14 +28,9 @@ import (
 	"github.com/damonto/sigmo/internal/app/handler/notification"
 	hsettings "github.com/damonto/sigmo/internal/app/handler/settings"
 	"github.com/damonto/sigmo/internal/app/handler/simapp"
-	hupdate "github.com/damonto/sigmo/internal/app/handler/update"
 	"github.com/damonto/sigmo/internal/app/handler/ussd"
-	hwebpush "github.com/damonto/sigmo/internal/app/handler/webpush"
-	"github.com/damonto/sigmo/internal/app/mcpauth"
-	"github.com/damonto/sigmo/internal/app/mcpserver"
 	appmiddleware "github.com/damonto/sigmo/internal/app/middleware"
 	"github.com/damonto/sigmo/internal/app/modemstatus"
-	appupdate "github.com/damonto/sigmo/internal/app/update"
 	pinternet "github.com/damonto/sigmo/internal/pkg/internet"
 	"github.com/damonto/sigmo/internal/pkg/lpa"
 	pmessage "github.com/damonto/sigmo/internal/pkg/message"
@@ -46,7 +39,6 @@ import (
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
 	pussd "github.com/damonto/sigmo/internal/pkg/ussd"
-	"github.com/damonto/sigmo/internal/pkg/webpush"
 )
 
 type Extension func(*echo.Group, RegisterConfig) error
@@ -64,16 +56,16 @@ type RegisterConfig struct {
 	Relay               *forwarder.Relay
 	Network             *network.Handler
 	Storage             *storage.Store
-	WebPush             *webpush.Client
+	WebPush             webPushClient
 	Reminders           *reminder.Scheduler
 	MessageRoute        pmessage.Route
 	USSDRoute           pussd.Route
 	ModemOverview       []modemstatus.Extension
 	Features            []string
 	Extensions          []Extension
-	MCP                 *mcpserver.Controller
-	MCPKeys             *mcpauth.Store
-	Updates             *appupdate.Controller
+	MCP                 mcpController
+	MCPKeys             mcpKeyStore
+	Updates             updateController
 	LicenseRoutes       func(*echo.Group)
 }
 
@@ -87,21 +79,13 @@ func Register(e *echo.Echo, deps RegisterConfig) error {
 		HTML5:      true,
 		Skipper: func(c *echo.Context) bool {
 			path := c.Request().URL.Path
-			return strings.HasPrefix(path, "/api/") || path == mcpserver.EndpointPath || strings.HasPrefix(path, mcpserver.EndpointPath+"/")
+			return strings.HasPrefix(path, "/api/") || path == mcpEndpointPath || strings.HasPrefix(path, mcpEndpointPath+"/")
 		},
 	}))
 
 	authStore, err := auth.NewStore(deps.Storage)
 	if err != nil {
 		return fmt.Errorf("configure auth store: %w", err)
-	}
-	if deps.MCP != nil {
-		e.Match(
-			[]string{http.MethodGet, http.MethodPost, http.MethodDelete},
-			mcpserver.EndpointPath,
-			echo.WrapHandler(deps.MCP.Handler()),
-			appmiddleware.AccessBoundary(authStore, deps.Store),
-		)
 	}
 
 	v1 := e.Group("/api/v1", appmiddleware.AccessBoundary(authStore, deps.Store))
@@ -144,26 +128,6 @@ func Register(e *echo.Echo, deps RegisterConfig) error {
 			protected.PUT("/settings/proxy", h.UpdateProxy)
 			protected.PUT("/settings/channels/:channel", h.UpdateNotificationChannel)
 			protected.PUT("/settings/notifications", h.UpdateNotifications)
-		}
-
-		if deps.Updates != nil {
-			h := hupdate.New(deps.Updates)
-			protected.GET("/settings/updates", h.GetSettings)
-			protected.PUT("/settings/updates", h.UpdateSettings)
-			protected.POST("/update-checks", h.CreateCheck)
-			protected.POST("/update-installations", h.CreateInstallation)
-			protected.GET("/update-installations/current", h.CurrentInstallation)
-		}
-
-		if deps.MCP != nil && deps.MCPKeys != nil {
-			h := mcpadmin.New(mcpadmin.Config{Settings: deps.Store, Keys: deps.MCPKeys, Storage: deps.Storage, Controller: deps.MCP})
-			protected.GET("/settings/mcp", h.GetSettings)
-			protected.PUT("/settings/mcp", h.UpdateSettings)
-			protected.GET("/settings/mcp/api-keys", h.ListAPIKeys)
-			protected.POST("/settings/mcp/api-keys", h.CreateAPIKey)
-			protected.DELETE("/settings/mcp/api-keys/:id", h.RevokeAPIKey)
-			protected.GET("/settings/mcp/audit-events", h.ListAuditEvents)
-			protected.GET("/settings/mcp/skills/sigmo-control", h.DownloadSkill)
 		}
 
 		h := hmodem.New(hmodem.Config{
@@ -262,14 +226,8 @@ func Register(e *echo.Echo, deps RegisterConfig) error {
 			protected.DELETE("/modems/:id/ses/:seId/notifications/:sequence", h.Delete)
 		}
 
-		{
-			h := hwebpush.New(deps.WebPush)
-			protected.GET("/web-push", h.Get)
-			protected.PUT("/web-push", h.Update)
-			protected.GET("/web-push/subscriptions", h.ListSubscriptions)
-			protected.POST("/web-push/subscriptions", h.Register)
-			protected.PATCH("/web-push/subscriptions/:subscriptionId", h.Rename)
-			protected.DELETE("/web-push/subscriptions/:subscriptionId", h.Delete)
+		if err := registerFeatureRoutes(e, protected, authStore, deps); err != nil {
+			return err
 		}
 
 		for _, extension := range deps.Extensions {
