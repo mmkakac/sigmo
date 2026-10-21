@@ -1,62 +1,39 @@
-# sigmo 社区版 —— OpenWrt ARMv8 (aarch64) 二进制编译 workflow（修正版）
+# sigmo OpenWrt arm64 构建工作流
 #
-# 放置位置：仓库根目录 .github/workflows/sigmo-openwrt-armv8.yml
-# 触发方式：手动触发（workflow_dispatch），或推送 v* 标签时触发并上传产物
-#
-# 为什么这一版去掉了 musl patch / -I 解释器：
-#   sigmo 社区版的 SQLite 用的是 ncruces/go-sqlite3 —— cgo-free 的 WASM 后端，
-#   SQLite 直接编译进二进制（纯 Go + x/sys），不 dlopen 任何外部库。
-#   purego（ebitengine/purego）只存在于 pro 版依赖（pro/go.mod）里，社区版没有。
-#   因此社区版产物是“全静态、自包含”的，OpenWrt(ARMv8/aarch64, musl) 无需安装任何运行时包，
-#   更不需要 libsqlite3（之前那个 "Unknown package 'libsqlite3'" 可以忽略，本来就不该装）。
-
-name: Build sigmo for OpenWrt ARMv8 (aarch64)
+# 目标：在 GitHub Actions 上交叉编译 sigmo 的 arm64 静态二进制，供 OpenWrt 使用。
+# 说明：
+#   - 全静态（CGO_ENABLED=0）：不需要 musl 解释器，不需要 libsqlite3
+#   - 使用 -tags minimal：不编译 MCP/Agent Skills、更新设置、web push、native push，减小体积
+#   - 产物重命名带 OpenWrt 标记，便于区分通用发行版
+name: Build sigmo for OpenWrt arm64
 
 on:
-  workflow_dispatch:
   push:
-    tags: [ 'v*' ]
-
-permissions:
-  contents: read
+    branches:
+      - main
+      - feat/**
+  workflow_dispatch:
 
 jobs:
-  build-openwrt-armv8:
-    name: Build sigmo (community) static armv8
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Setup Bun (build frontend)
-        uses: oven-sh/setup-bun@v2
-
-      # go-version-file 会按 go.mod 自动安装需要的 Go 工具链（go 1.27.x）
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Build frontend
-        run: |
-          cd apps/web
-          bun install --frozen-lockfile
-          bun run build --mode prod
-
-      - name: Generate assets (carrier/euicc/sqlc)
+      - name: Generate
         run: go generate ./...
 
-      - name: Build static OpenWrt armv8 binary
+      - name: Build
+        id: build
+        env:
+          distribution: openwrt
         run: |
-          set -euo pipefail
-          version="dev-${GITHUB_SHA::8}"
-          distribution="developer"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            version="${GITHUB_REF_NAME}"
-            distribution="standalone"
-          fi
+          version=$(git describe --tags --always 2>/dev/null || echo dev)
           ldflags="-w -s"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Version=${version}"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Commit=${GITHUB_SHA}"
@@ -65,34 +42,16 @@ jobs:
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Target=linux-arm64"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Distribution=${distribution}"
           # 全静态交叉编译：不需要 musl 解释器，不需要 libsqlite3
+          # minimal tag：不编译 MCP/Agent Skills、更新设置、web push、native push，减小体积
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-            go build -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
+            go build -tags minimal -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
 
       - name: Inspect binary (confirm static)
         run: |
           file sigmo-linux-arm64-openwrt
-          # 静态链接应输出 "not a dynamic executable"；若出现 interpreter 说明非静态，需排查
-          readelf -d sigmo-linux-arm64-openwrt 2>/dev/null | grep -iE "NEEDED|INTERP" || echo "OK: no dynamic deps / no interpreter (fully static)"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
-          name: sigmo-linux-arm64-openwrt
+          name: sigmo-openwrt-arm64
           path: sigmo-linux-arm64-openwrt
-          if-no-files-found: error
-
-  # 可选：打 tag 时发一个 release 附上 OpenWrt 产物
-  release-openwrt:
-    name: Publish OpenWrt release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build-openwrt-armv8
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: sigmo-linux-arm64-openwrt
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: sigmo-linux-arm64-openwrt
