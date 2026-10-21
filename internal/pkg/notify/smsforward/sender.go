@@ -45,7 +45,9 @@ func (s *Sender) Attach(send SendFunc) {
 // as SMS.
 func (s *Sender) Send(ctx context.Context, msg notifycontent.Message) error {
 	if len(s.numbers) == 0 {
-		return nil
+		// Fail loudly instead of reporting success while nothing is transmitted,
+		// which previously hid an OTP code that was never delivered.
+		return errors.New("sms channel has no forwarding number configured")
 	}
 	var text string
 	switch ev := msg.Event.(type) {

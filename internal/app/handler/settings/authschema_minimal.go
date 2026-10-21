@@ -9,8 +9,8 @@ import appsettings "github.com/damonto/sigmo/internal/pkg/settings"
 func authModeOptions() []Option {
 	return []Option{
 		{Label: "settings.authNone", Value: "none"},
-		{Label: "settings.authOTP", Value: "otp"},
 		{Label: "settings.authPassword", Value: "password"},
+		{Label: "settings.authOTP", Value: "otp"},
 	}
 }
 

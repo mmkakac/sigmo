@@ -359,6 +359,8 @@ const zh = {
         keepSecret: '留空保留已保存的密钥。',
         password: '固定密码',
         passwordDescription: 'Web 界面与 API 客户端共用的固定登录密码。留空保留已保存的密码。',
+        passwordConfirm: '再次输入密码确认',
+        passwordMismatch: '两次输入的密码不一致，请重新输入。',
         oidcAllowedSubjects: '允许登录的 OIDC 主体（sub）',
         accessTeamDomain: 'Cloudflare Access 团队地址',
         accessAudience: 'Cloudflare Access 应用 AUD',

@@ -6,16 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
-	"net/http"
 	"sync"
 	"time"
-
-	"github.com/coreos/go-oidc/v3/oidc"
 
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
@@ -37,11 +33,11 @@ type Store struct {
 	mu         sync.Mutex
 	db         *storage.Store
 	challenges map[string]*challenge
-	logins     map[string]login
 	limits     map[string]rateLimit
-	providers  map[string]*oidc.Provider
-	keys       map[string]*oidc.RemoteKeySet
-	client     *http.Client
+	// oidc carries OIDC and Cloudflare Access login state. In minimal builds it
+	// is an empty struct so those features (and their dependencies) are not
+	// compiled at all.
+	oidc oidcState
 }
 type challenge struct {
 	digest, policyID string
@@ -66,10 +62,7 @@ func NewStore(db *storage.Store) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("auth storage is required")
 	}
-	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	return &Store{db: db, challenges: map[string]*challenge{}, logins: map[string]login{}, limits: map[string]rateLimit{}, providers: map[string]*oidc.Provider{}, keys: map[string]*oidc.RemoteKeySet{}, client: client}, nil
+	return &Store{db: db, challenges: map[string]*challenge{}, limits: map[string]rateLimit{}, oidc: newOIDCState()}, nil
 }
 
 // AllowLogin bounds both memory and unauthenticated work per source and operation.
@@ -234,7 +227,3 @@ func credentialsFor(expiresAt time.Time, native bool) (Tokens, []storage.AuthCre
 // Hash returns a stable token digest for persistence, never a password hash.
 func Hash(raw string) string { hash := sha256.Sum256([]byte(raw)); return hex.EncodeToString(hash[:]) }
 func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
-func pkce(verifier string) string {
-	hash := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(hash[:])
-}

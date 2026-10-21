@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"net"
 	"errors"
 	"net/http"
 	"strings"
@@ -32,8 +33,38 @@ func SameOrigin(c *echo.Context) bool {
 	if origin == "" {
 		return c.Request().Header.Get("Sec-Fetch-Site") != "cross-site"
 	}
-	expected := c.Scheme() + "://" + c.Request().Host
-	return origin == expected
+	return origin == requestOrigin(c)
+}
+
+// requestOrigin returns the externally visible origin of a request. For direct
+// (loopback/private) peers it honours the X-Forwarded-Proto and X-Forwarded-Host
+// headers set by a trusted reverse proxy (frp, Nginx, 花生壳, Caddy), so that
+// HTTPS-terminated and host-rewriting proxies authenticate correctly. For
+// public peers the forwarded headers are ignored and the real scheme+host is
+// used, preserving CSRF protection against spoofed origins.
+func requestOrigin(c *echo.Context) string {
+	scheme, host := c.Scheme(), c.Request().Host
+	if trustedProxyPeer(c) {
+		if proto := c.Request().Header.Get("X-Forwarded-Proto"); proto == "http" || proto == "https" {
+			scheme = proto
+		}
+		if forwardedHost := c.Request().Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+			host = forwardedHost
+		}
+	}
+	return scheme + "://" + host
+}
+
+// trustedProxyPeer reports whether the direct peer may be a reverse proxy
+// allowed to set forwarding headers. This mirrors echo's own trust policy:
+// loopback, link-local and private network addresses are trusted.
+func trustedProxyPeer(c *echo.Context) bool {
+	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+	if err != nil {
+		host = c.Request().RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsPrivate())
 }
 
 // Auth applies the selected trust boundary and never treats OTP being disabled as anonymous.
@@ -55,7 +86,7 @@ func Auth(store *auth.Store, settingsStore *settings.Store) echo.MiddlewareFunc 
 				}
 				session = CurrentSession(c)
 				if session.Method != "cloudflare_access" {
-					session, err = store.VerifyAccess(c.Request().Context(), auth.AccessRequest{Policy: cfg, Assertion: c.Request().Header.Get("Cf-Access-Jwt-Assertion")})
+					session, err = verifyAccessSession(store, cfg, c)
 				}
 			case "otp", "oidc", "password":
 				raw, kind := "", "access"
@@ -136,7 +167,7 @@ func AccessBoundary(store *auth.Store, settingsStore *settings.Store) echo.Middl
 		return func(c *echo.Context) error {
 			cfg := settingsStore.Snapshot().Auth
 			if cfg.Mode == "cloudflare_access" {
-				session, err := store.VerifyAccess(c.Request().Context(), auth.AccessRequest{Policy: cfg, Assertion: c.Request().Header.Get("Cf-Access-Jwt-Assertion")})
+				session, err := verifyAccessSession(store, cfg, c)
 				if errors.Is(err, storage.ErrInvalidSession) {
 					return httpapi.Error(c, http.StatusUnauthorized, "invalid_session", "authentication is required")
 				}

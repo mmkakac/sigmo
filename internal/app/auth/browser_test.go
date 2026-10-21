@@ -90,7 +90,7 @@ func TestOIDCBrowserFlow(t *testing.T) {
 			}))
 			defer provider.Close()
 			issuer = provider.URL
-			s.client = provider.Client()
+			s.oidc.client = provider.Client()
 			cfg := otpPolicy()
 			cfg.Mode = "oidc"
 			cfg.OIDC = settings.OIDC{Issuer: issuer, ClientID: "client", ClientSecret: "secret", AllowedSubjects: []string{"owner"}}
@@ -259,7 +259,7 @@ func TestAccessAssertion(t *testing.T) {
 	}))
 	defer server.Close()
 	s := testAuthStore(t)
-	s.client = server.Client()
+	s.oidc.client = server.Client()
 	cfg := settings.Auth{Mode: "cloudflare_access", CloudflareAccess: settings.CloudflareAccess{TeamDomain: server.URL, Audience: "app-aud", AllowedSubjects: []string{"owner"}}}
 	for _, scenario := range []string{"valid", "wrong aud", "wrong issuer", "unlisted", "expired", "future", "unsigned"} {
 		t.Run(scenario, func(t *testing.T) {

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { computed, ref, watch } from 'vue'
 import SettingsChannelPicker from '@/components/settings/SettingsChannelPicker.vue'
 import SettingsField from '@/components/settings/SettingsField.vue'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type {
   SettingsAuth,
@@ -21,10 +22,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update-field': [key: string, value: unknown]
+  'update:valid': [valid: boolean]
 }>()
 
 const { t, te } = useI18n()
 const otpChannels = computed(() => props.auth?.otpChannels ?? [])
+const confirmPassword = ref('')
+const passwordFieldValue = computed(() => fieldValue('password') as string | undefined)
+const passwordMismatch = computed(() => {
+  if (props.auth?.mode !== 'password') return false
+  const confirm = confirmPassword.value
+  return !confirm || confirm !== (passwordFieldValue.value ?? '')
+})
+watch(passwordMismatch, (mismatch) => emit('update:valid', !mismatch), { immediate: true })
 
 const schemaText = (value: string | undefined) => {
   return value && te(value) ? t(value) : (value ?? '')
@@ -78,13 +88,43 @@ const visibleFields = computed(() =>
         </div>
 
         <SettingsField
-          v-else
+          v-else-if="field.key !== 'password'"
           :id="fieldID(field.key)"
           :field="field"
           :model-value="fieldValue(field.key)"
           :disabled="disabled"
           @update:model-value="emit('update-field', field.key, $event)"
         />
+
+        <div
+          v-else
+          class="space-y-2"
+        >
+          <SettingsField
+            :id="fieldID(field.key)"
+            :field="field"
+            :model-value="passwordFieldValue"
+            :disabled="disabled"
+            @update:model-value="emit('update-field', field.key, $event)"
+          />
+          <div class="space-y-2">
+            <Label>{{ schemaText('settings.schema.auth.passwordConfirm') }}</Label>
+            <Input
+              id="settings-auth-password-confirm"
+              type="password"
+              :model-value="confirmPassword"
+              :disabled="disabled"
+              placeholder="••••••••"
+              @update:model-value="confirmPassword = String($event)"
+            />
+            <p
+              v-if="passwordMismatch"
+              class="text-xs text-destructive"
+            >
+              {{ schemaText('settings.schema.auth.passwordMismatch') }}
+            </p>
+          </div>
+        </div>
       </div>
     </CardContent>
   </Card>

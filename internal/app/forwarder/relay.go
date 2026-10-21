@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"sort"
 	"context"
 	"errors"
 	"fmt"
@@ -145,14 +146,24 @@ func (r *Relay) SendSMS(ctx context.Context, modemID, to, text string) error {
 		}
 		m = found
 	} else {
+		// No originating modem (for example an OTP code): transmit through the
+		// first connected SIM deterministically, so the choice is stable across
+		// calls and across modems.
 		modems, err := r.registry.Modems(ctx)
 		if err != nil {
 			return fmt.Errorf("enumerate modems: %w", err)
 		}
-		for _, candidate := range modems {
+		paths := make([]string, 0, len(modems))
+		for path, candidate := range modems {
 			if candidate != nil {
-				m = candidate
-				break
+				paths = append(paths, path)
+			}
+		}
+		sort.Strings(paths)
+		if len(paths) > 0 {
+			m, err = r.registry.Find(ctx, paths[0])
+			if err != nil {
+				return fmt.Errorf("find modem %s: %w", paths[0], err)
 			}
 		}
 	}

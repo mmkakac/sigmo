@@ -10,7 +10,7 @@ import {
   fetchWithBoundedErrors,
   isLocalAuthenticationError,
 } from './apiProblem'
-import { handleError, handleResponseError } from './errorHandler'
+import { handleError, handleResponseError, resetAuthErrorState } from './errorHandler'
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL
 const baseUrl =
@@ -48,6 +48,9 @@ export const useFetch = createFetch({
     },
 
     afterFetch({ response, data }) {
+      // A successful response means an authenticated session is active again,
+      // so the next expiry may surface its toast.
+      resetAuthErrorState()
       // Unified logging in development
       if (import.meta.env.DEV) {
         console.log(`[API] ${response.url} → ${response.status}`, data)

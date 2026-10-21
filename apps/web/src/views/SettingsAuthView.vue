@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { FlaskConical } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
+import { computed, ref } from 'vue'
 import SettingsAuthSection from '@/components/settings/SettingsAuthSection.vue'
 import SettingsHeader from '@/components/settings/SettingsHeader.vue'
 import SettingsSaveButton from '@/components/settings/SettingsSaveButton.vue'
@@ -28,6 +28,11 @@ const isAuthBusy = computed(() => isSaving.value || isTestingAuth.value)
 const isTestDisabled = computed(
   () => isAuthBusy.value || (authValues.value?.otpChannels.length ?? 0) === 0,
 )
+// The fixed password must be entered twice and match before it can be saved.
+const authSectionValid = ref(true)
+const isSaveDisabled = computed(
+  () => isAuthBusy.value || !authSectionValid.value,
+)
 </script>
 
 <template>
@@ -52,6 +57,7 @@ const isTestDisabled = computed(
         :fields="authFields"
         :disabled="isAuthBusy"
         @update-field="setAuthValue"
+        @update:valid="authSectionValid = $event"
       />
 
       <div
@@ -79,7 +85,7 @@ const isTestDisabled = computed(
           </Button>
           <SettingsSaveButton
             class="w-full"
-            :disabled="isAuthBusy"
+            :disabled="isSaveDisabled"
             :saving="isSavingAuth"
             @save="saveAuth"
           />

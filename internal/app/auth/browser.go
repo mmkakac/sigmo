@@ -1,8 +1,12 @@
+//go:build !minimal
+
 package auth
 
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -114,7 +118,7 @@ func (s *Store) CompleteBrowserLogin(ctx context.Context, req BrowserCallback) (
 		return BrowserResult{}, err
 	}
 	config := oauthConfig(req.Policy, provider, transaction.origin+transaction.basePath)
-	token, err := config.Exchange(oidc.ClientContext(ctx, s.client), req.Code, oauth2.VerifierOption(transaction.verifier))
+	token, err := config.Exchange(oidc.ClientContext(ctx, s.oidc.client), req.Code, oauth2.VerifierOption(transaction.verifier))
 	if err != nil {
 		return BrowserResult{}, fmt.Errorf("exchange OIDC code: %w", err)
 	}
@@ -184,10 +188,10 @@ func (s *Store) VerifyAccess(ctx context.Context, req AccessRequest) (storage.Au
 		return storage.AuthSession{}, storage.ErrInvalidSession
 	}
 	s.mu.Lock()
-	keys := s.keys[cfg.TeamDomain]
+	keys := s.oidc.keys[cfg.TeamDomain]
 	if keys == nil {
-		keys = oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), s.client), cfg.TeamDomain+"/cdn-cgi/access/certs")
-		s.keys = map[string]*oidc.RemoteKeySet{cfg.TeamDomain: keys}
+		keys = oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), s.oidc.client), cfg.TeamDomain+"/cdn-cgi/access/certs")
+		s.oidc.keys = map[string]*oidc.RemoteKeySet{cfg.TeamDomain: keys}
 	}
 	s.mu.Unlock()
 	token, err := oidc.NewVerifier(cfg.TeamDomain, keys, &oidc.Config{ClientID: cfg.Audience, SupportedSigningAlgs: []string{"RS256"}}).Verify(ctx, req.Assertion)
@@ -208,12 +212,12 @@ func (s *Store) VerifyAccess(ctx context.Context, req AccessRequest) (storage.Au
 
 func (s *Store) provider(ctx context.Context, issuer string) (*oidc.Provider, error) {
 	s.mu.Lock()
-	provider := s.providers[issuer]
+	provider := s.oidc.providers[issuer]
 	s.mu.Unlock()
 	if provider != nil {
 		return provider, nil
 	}
-	provider, err := oidc.NewProvider(oidc.ClientContext(ctx, s.client), issuer)
+	provider, err := oidc.NewProvider(oidc.ClientContext(ctx, s.oidc.client), issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discover OIDC provider: %w", err)
 	}
@@ -230,7 +234,7 @@ func (s *Store) provider(ctx context.Context, issuer string) (*oidc.Provider, er
 		}
 	}
 	s.mu.Lock()
-	s.providers = map[string]*oidc.Provider{issuer: provider}
+	s.oidc.providers = map[string]*oidc.Provider{issuer: provider}
 	s.mu.Unlock()
 	return provider, nil
 }
@@ -258,23 +262,23 @@ func validBrowserBasePath(basePath string) bool {
 func (s *Store) saveLogin(id string, transaction login) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for key, value := range s.logins {
+	for key, value := range s.oidc.logins {
 		if !time.Now().Before(value.expiresAt) {
-			delete(s.logins, key)
+			delete(s.oidc.logins, key)
 		}
 	}
-	if len(s.logins) >= 256 {
+	if len(s.oidc.logins) >= 256 {
 		return ErrRateLimited
 	}
-	s.logins[id] = transaction
+	s.oidc.logins[id] = transaction
 	return nil
 }
 
 func (s *Store) takeLogin(id, kind, policyID string) (login, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	value, ok := s.logins[id]
-	delete(s.logins, id)
+	value, ok := s.oidc.logins[id]
+	delete(s.oidc.logins, id)
 	if !ok || value.kind != kind || value.policyID != policyID || !time.Now().Before(value.expiresAt) {
 		return login{}, ErrInvalidLogin
 	}
@@ -291,4 +295,9 @@ func validChallenge(value string) bool {
 		}
 	}
 	return true
+}
+
+func pkce(verifier string) string {
+	hash := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(hash[:])
 }

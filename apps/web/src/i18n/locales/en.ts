@@ -372,6 +372,8 @@ const en = {
         oidcClientSecret: 'OIDC client secret',
         keepSecret: 'Leave empty to retain the saved secret.',
         password: 'Fixed password',
+        passwordConfirm: 'Re-enter password to confirm',
+        passwordMismatch: 'The two passwords do not match.',
         passwordDescription:
           'A single password used by both the web UI and API clients. Leave empty to retain the saved password.',
         oidcAllowedSubjects: 'Allowed OIDC subjects (sub)',

@@ -5,6 +5,17 @@ import { createApiError, isLocalAuthenticationError, type ApiError } from './api
 import { invalidateSession } from './authSession'
 import { notifyError } from './notify'
 
+// authErrorActive suppresses duplicate "session expired" toasts after a logout
+// or an expired session. It is cleared on the next successful authenticated
+// request, so each login cycle shows at most one such toast even when
+// background pollers keep receiving 401 invalid_session responses.
+let authErrorActive = false
+
+/** resetAuthErrorState allows the next invalid_session to surface a toast. */
+export const resetAuthErrorState = (): void => {
+  authErrorActive = false
+}
+
 export { createApiError } from './apiProblem'
 export type { ApiError } from './apiProblem'
 
@@ -91,12 +102,13 @@ export const handleResponseError = (response: Response, data?: unknown) => {
 
   if (isLocalAuthenticationError(apiError)) {
     invalidateSession()
-  }
-
-  // A removable card can advertise eUICC capability in its ATR while not
-  // exposing an ISD-R application. Callers still receive the typed error and
-  // can render an empty eSIM state without showing a global failure toast.
-  if (apiError.error_code !== 'euicc_not_supported') {
+    // Show the expiry toast only once per login cycle; repeated 401s from
+    // background pollers after logout must not spam the UI.
+    if (!authErrorActive) {
+      authErrorActive = true
+      handleError(apiError)
+    }
+  } else if (apiError.error_code !== 'euicc_not_supported') {
     handleError(apiError)
   }
   console.error('[API Error]', response.status, apiError)
