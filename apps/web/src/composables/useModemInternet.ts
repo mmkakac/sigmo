@@ -41,6 +41,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
   const internetAlwaysOn = ref(false)
   const internetNoInterface = ref(true)
   const isInternetLoading = ref(false)
+  const isQueryingPublic = ref(false)
   const isInternetConnecting = ref(false)
   const isInternetDisconnecting = ref(false)
   const isInternetPreferencesUpdating = ref(false)
@@ -128,6 +129,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
       publicConnectionKey.value = ''
       return
     }
+    isQueryingPublic.value = true
     try {
       const { data } = await internetApi.getPublic(targetId)
       if (modemId.value === targetId && connectionKey(internetConnection.value) === targetKey) {
@@ -136,6 +138,8 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
       }
     } catch (err) {
       console.error('[useModemInternet] Failed to fetch public network:', err)
+    } finally {
+      isQueryingPublic.value = false
     }
   }
 
@@ -187,9 +191,6 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
       })
       const connection = data.value ?? null
       applyConnection(connection)
-      if (connection?.status === 'connected') {
-        void fetchInternetPublic(connection)
-      }
       onSuccess?.(t('modemDetail.settings.internetConnectSuccess'))
     } catch (err) {
       console.error('[useModemInternet] Failed to connect:', err)
@@ -212,6 +213,12 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
     } finally {
       isInternetDisconnecting.value = false
     }
+  }
+
+  // Public network info is only fetched when the user asks, to avoid a DNS
+  // round trip on every connection/poll.
+  const queryInternetPublic = async () => {
+    await fetchInternetPublic(internetConnection.value)
   }
 
   const handleInternetPreferencesUpdate = async (next: InternetConnectionPreferencesPayload) => {
@@ -260,7 +267,7 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
       if (!id || !canUseInternet) {
         return
       }
-      await fetchInternetConnection({ includePublic: true })
+      await fetchInternetConnection()
     },
     { immediate: true },
   )
@@ -295,8 +302,10 @@ export const useModemInternet = ({ modemId, enabled, onSuccess, onError }: Optio
     isInternetConnecting,
     isInternetDisconnecting,
     isInternetPreferencesUpdating,
+    isQueryingPublic,
     isInternetConnected,
     canConnectInternet,
+    queryInternetPublic,
     handleInternetConnect,
     handleInternetDisconnect,
     handleInternetPreferencesUpdate,

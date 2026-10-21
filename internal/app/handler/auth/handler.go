@@ -2,6 +2,7 @@ package auth
 
 import (
 	"cmp"
+	"context"
 	"crypto/subtle"
 	"errors"
 	"net"
@@ -23,11 +24,21 @@ import (
 type Handler struct {
 	settings *settings.Store
 	store    *auth.Store
+	// otpSMSTransport delivers an OTP verification code as an SMS when the
+	// "sms" notification channel is selected for OTP delivery. It is nil until
+	// the server wires a modem-backed transport.
+	otpSMSTransport func(ctx context.Context, modemID, to, text string) error
 }
 
 // New uses the same authentication service as the API middleware.
 func New(settingsStore *settings.Store, store *auth.Store) *Handler {
 	return &Handler{settings: settingsStore, store: store}
+}
+
+// SetOTPSMSTransport installs the modem transport used to forward OTP codes as
+// SMS through the "sms" channel.
+func (h *Handler) SetOTPSMSTransport(send func(ctx context.Context, modemID, to, text string) error) {
+	h.otpSMSTransport = send
 }
 
 // Methods exposes capabilities without secrets or admission lists.
@@ -75,6 +86,9 @@ func (h *Handler) CreateOTPChallenge(c *echo.Context) error {
 	notifier, err := notify.ForChannels(&cfg, cfg.Auth.OTP.Channels)
 	if err != nil {
 		return httpapi.Internal(c, "otp_delivery_failed", err)
+	}
+	if h.otpSMSTransport != nil {
+		notifier.AttachSMSForwarder(h.otpSMSTransport)
 	}
 	id, code, err := h.store.IssueOTP(cfg.Auth.PolicyID())
 	if err != nil {

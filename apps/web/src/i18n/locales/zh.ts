@@ -466,6 +466,15 @@ const zh = {
             description: '你的 PushPlus 个人 token。',
           },
         },
+        sms: {
+          label: '短信转发',
+          description: '把收到的短信转发到指定手机号（可填多个）。',
+          recipients: {
+            label: '转发号码',
+            description: '收到的短信会以短信形式转发到这些号码。',
+            placeholder: '输入手机号后按回车添加…',
+          },
+        },
         http: {
           label: 'HTTP Webhook',
           description: '将通知事件 POST 到自定义 webhook。',
@@ -645,15 +654,6 @@ const zh = {
       },
     },
   },
-    sms: {
-      label: '短信转发',
-      description: '把收到的短信转发到指定手机号（可填多个）。',
-      recipients: {
-        label: '转发号码',
-        description: '收到的短信会以短信形式转发到这些号码。',
-        placeholder: '输入手机号后按回车添加…',
-      },
-    },
   messages: {
     title: '设备短信',
     subtitle: '选择登录方式以访问 Sigmo。',
@@ -1154,6 +1154,7 @@ const zh = {
       internetAPNProfileTitle: 'APN Profile',
       internetPreferencesTitle: '连接偏好',
       internetIPInfoTitle: 'IP 信息',
+      internetQueryPublic: '查询公网信息',
       internetPublicInfoTitle: '公网信息',
       internetPublicIP: 'IP',
       internetRegion: '地区',

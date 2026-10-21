@@ -2,12 +2,18 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { RefreshCw } from 'lucide-vue-next'
 import RegionFlag from '@/components/RegionFlag.vue'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { InternetPublicResponse } from '@/types/internet'
 
 const props = defineProps<{
   publicInfo: InternetPublicResponse | null
+  querying: boolean
+}>()
+const emit = defineEmits<{
+  (event: 'query'): void
 }>()
 
 const { t } = useI18n()
@@ -22,10 +28,20 @@ const publicOrganizationLabel = computed(() => {
 
 <template>
   <Card class="gap-4 border-0 py-4 shadow-sm">
-    <CardHeader class="px-4">
+    <CardHeader class="flex flex-row items-center justify-between gap-2 px-4">
       <CardTitle class="text-base">
         {{ t('modemDetail.settings.internetPublicInfoTitle') }}
       </CardTitle>
+      <Button
+        size="sm"
+        variant="outline"
+        type="button"
+        :disabled="querying"
+        @click="emit('query')"
+      >
+        <RefreshCw class="size-3.5" :class="{ 'animate-spin': querying }" />
+        <span class="ml-1">{{ t('modemDetail.settings.internetQueryPublic') }}</span>
+      </Button>
     </CardHeader>
 
     <CardContent class="space-y-2 px-4 text-sm">

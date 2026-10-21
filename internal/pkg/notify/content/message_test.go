@@ -38,7 +38,7 @@ func TestCompose(t *testing.T) {
 				Incoming: true,
 			},
 			want: Message{
-				Subject:  "Incoming SMS",
+				Subject:  "To: +86 133 4444 5555 Incoming SMS",
 				Headline: "Incoming SMS from +1 (222) 333-4444",
 				Fields: []Field{
 					{Label: "From", Value: "+1 (222) 333-4444"},
@@ -315,7 +315,7 @@ func TestComposeChinese(t *testing.T) {
 				Incoming: true,
 			},
 			want: Message{
-				Subject:  "新短信",
+				Subject:  "收件人: +86 133 4444 5555 新短信",
 				Headline: "来自 10086 的新短信",
 				Fields: []Field{
 					{Label: "发件人", Value: "10086"},

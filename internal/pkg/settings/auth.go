@@ -45,7 +45,7 @@ type CloudflareAccess struct {
 
 // HasMethod reports whether the selected mode permits this login method.
 func (a Auth) HasMethod(method string) bool {
-	return (method == "otp" || method == "oidc" || method == "password") && a.Mode == method
+	return (method == "otp" || (method == "oidc" && authModeSupported("oidc")) || method == "password") && a.Mode == method
 }
 
 // ApplyDefaults fills only absent values; unknown modes never become anonymous.
@@ -104,6 +104,9 @@ func (s Settings) Validate() error {
 			}
 			seen[name] = true
 		}
+	}
+	if a.Mode != "" && !authModeSupported(a.Mode) {
+		return errors.New("authentication mode is not available in this build")
 	}
 	switch a.Mode {
 	case "none":

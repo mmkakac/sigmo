@@ -126,14 +126,40 @@ func (r *Relay) attachSMSForwarder(notifier *notify.Notifier) {
 // sendForwardedSMS transmits a forwarded SMS through the modem that received
 // the original event, matching the modem by its IMEI/ID.
 func (r *Relay) sendForwardedSMS(ctx context.Context, modemID, to, text string) error {
-	m, err := r.registry.Find(ctx, modemID)
-	if err != nil {
-		return fmt.Errorf("find source modem %s: %w", modemID, err)
+	return r.SendSMS(ctx, modemID, to, text)
+}
+
+// SendSMS transmits an SMS through the modem identified by modemID, or through
+// any available modem when modemID is empty (e.g. for OTP codes, which have no
+// originating modem). It is used both by the SMS forwarding channel and by the
+// OTP "sms" delivery channel.
+func (r *Relay) SendSMS(ctx context.Context, modemID, to, text string) error {
+	if r.messenger == nil {
+		return errors.New("SMS sending is not available: no messenger")
+	}
+	var m *modem.Modem
+	if modemID != "" {
+		found, err := r.registry.Find(ctx, modemID)
+		if err != nil {
+			return fmt.Errorf("find source modem %s: %w", modemID, err)
+		}
+		m = found
+	} else {
+		modems, err := r.registry.Modems(ctx)
+		if err != nil {
+			return fmt.Errorf("enumerate modems: %w", err)
+		}
+		for _, candidate := range modems {
+			if candidate != nil {
+				m = candidate
+				break
+			}
+		}
 	}
 	if m == nil {
-		return fmt.Errorf("source modem %s is gone", modemID)
+		return errors.New("no modem available to send SMS")
 	}
-	_, err = r.messenger.Send(ctx, m, to, text)
+	_, err := r.messenger.Send(ctx, m, to, text)
 	return err
 }
 

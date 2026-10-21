@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -105,6 +106,11 @@ func Register(e *echo.Echo, deps RegisterConfig) error {
 	v1.GET("/capabilities", capabilityHandler.List)
 
 	authHandler := hauth.New(deps.Store, authStore)
+	if deps.Relay != nil {
+		authHandler.SetOTPSMSTransport(func(ctx context.Context, modemID, to, text string) error {
+			return deps.Relay.SendSMS(ctx, modemID, to, text)
+		})
+	}
 	v1.GET("/auth/methods", authHandler.Methods)
 	v1.POST("/auth/otp/challenges", authHandler.CreateOTPChallenge)
 	v1.POST("/auth/sessions", authHandler.CreateSession)

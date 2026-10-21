@@ -31,8 +31,10 @@ const {
   isInternetConnecting,
   isInternetDisconnecting,
   isInternetPreferencesUpdating,
+  isQueryingPublic,
   isInternetConnected,
   canConnectInternet,
+  queryInternetPublic,
   handleInternetConnect,
   handleInternetDisconnect,
   handleInternetPreferencesUpdate,
@@ -67,11 +69,13 @@ const {
       :is-connecting="isInternetConnecting"
       :is-disconnecting="isInternetDisconnecting"
       :is-preferences-updating="isInternetPreferencesUpdating"
+      :is-querying-public="isQueryingPublic"
       :is-connected="isInternetConnected"
       :can-connect="canConnectInternet"
       @connect="handleInternetConnect"
       @disconnect="handleInternetDisconnect"
       @update-preferences="handleInternetPreferencesUpdate"
+      @query-public="queryInternetPublic"
     />
   </ModemSettingsShell>
 </template>

@@ -21,6 +21,7 @@ const props = defineProps<{
   isConnecting: boolean
   isDisconnecting: boolean
   isPreferencesUpdating: boolean
+  isQueryingPublic: boolean
   isConnected: boolean
   canConnect: boolean
 }>()
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   (event: 'connect'): void
   (event: 'disconnect'): void
   (event: 'update-preferences', preferences: InternetConnectionPreferencesPayload): void
+  (event: 'query-public'): void
 }>()
 const apn = defineModel<string>('apn', { required: true })
 const ipType = defineModel<string>('ipType', { required: true })
@@ -91,7 +93,12 @@ const handleAction = () => {
 
     <InternetProxyPanel v-if="shouldShowProxyInfo" :connection="props.connection" />
 
-    <InternetPublicPanel v-if="props.isConnected" :public-info="props.publicInfo" />
+    <InternetPublicPanel
+      v-if="props.isConnected"
+      :public-info="props.publicInfo"
+      :querying="props.isQueryingPublic"
+      @query="emit('query-public')"
+    />
   </div>
 
   <div

@@ -1,7 +1,5 @@
 package settings
 
-import appsettings "github.com/damonto/sigmo/internal/pkg/settings"
-
 const (
 	controlText        = "text"
 	controlPassword    = "password"
@@ -15,19 +13,7 @@ const (
 
 func settingsSchema() Schema {
 	return Schema{
-		Auth: []Field{
-			{Key: "mode", Label: "settings.schema.auth.mode", Control: controlSelect, Options: []Option{{Label: "settings.authNone", Value: "none"}, {Label: "settings.authOTP", Value: "otp"}, {Label: "settings.authOIDC", Value: "oidc"}, {Label: "settings.authAccess", Value: "cloudflare_access"}, {Label: "settings.authPassword", Value: "password"}}},
-			numberField("sessionMaxDays", "settings.schema.auth.sessionMaxDays", "settings.schema.auth.sessionMaxDaysDescription", 1, appsettings.MaxSessionMaxDays, true),
-			passwordField("password", "settings.schema.auth.password", "settings.schema.auth.passwordDescription", false),
-			{Key: "otpChannels", Label: "settings.schema.auth.otpChannels", Control: controlChannelList},
-			textField("oidcIssuer", "settings.schema.auth.oidcIssuer", "", "", false),
-			textField("oidcClientId", "settings.schema.auth.oidcClientId", "", "", false),
-			passwordField("oidcClientSecret", "settings.schema.auth.oidcClientSecret", "settings.schema.auth.keepSecret", false),
-			listField("oidcAllowedSubjects", "settings.schema.auth.oidcAllowedSubjects", "", false),
-			textField("accessTeamDomain", "settings.schema.auth.accessTeamDomain", "", "", false),
-			textField("accessAudience", "settings.schema.auth.accessAudience", "", "", false),
-			listField("accessAllowedSubjects", "settings.schema.auth.accessAllowedSubjects", "", false),
-		},
+		Auth: authSchemaFields(),
 		Proxy: []Field{
 			textField("listenAddress", "settings.schema.proxy.listenAddress.label", "settings.schema.proxy.listenAddress.description", "settings.schema.proxy.listenAddress.placeholder", true),
 			numberField("httpPort", "settings.schema.proxy.httpPort.label", "settings.schema.proxy.httpPort.description", 1, 65535, true),

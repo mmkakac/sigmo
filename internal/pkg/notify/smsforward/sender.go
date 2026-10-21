@@ -39,28 +39,44 @@ func (s *Sender) Attach(send SendFunc) {
 	s.send = send
 }
 
-// Send forwards an incoming SMS event to every configured number. Events of
-// other kinds are ignored so that a call or reminder is never sent as SMS.
+// Send forwards an incoming SMS event to every configured number. OTP events
+// are also forwarded so the "sms" channel can deliver login verification codes.
+// Events of other kinds are ignored so that a call or reminder is never sent
+// as SMS.
 func (s *Sender) Send(ctx context.Context, msg notifycontent.Message) error {
 	if len(s.numbers) == 0 {
 		return nil
 	}
-	event, ok := msg.Event.(notifyevent.SMSEvent)
-	if !ok {
-		return nil
-	}
-	if !event.Incoming || strings.TrimSpace(event.Text) == "" {
+	var text string
+	switch ev := msg.Event.(type) {
+	case notifyevent.SMSEvent:
+		if !ev.Incoming || strings.TrimSpace(ev.Text) == "" {
+			return nil
+		}
+		text = msg.Text()
+	case notifyevent.OTPEvent:
+		text = msg.Text()
+	default:
 		return nil
 	}
 	if s.send == nil {
 		return errors.New("sms channel has no modem transport attached")
 	}
-	text := msg.Text()
 	var combined error
 	for _, number := range s.numbers {
-		if err := s.send(ctx, event.ModemID, number, text); err != nil {
+		if err := s.send(ctx, smsEventModemID(msg), number, text); err != nil {
 			combined = errors.Join(combined, fmt.Errorf("forward to %s: %w", number, err))
 		}
 	}
 	return combined
+}
+
+// smsEventModemID returns the modem that carried the event, or "" for events
+// (such as OTP) that have no originating modem so the transport can fall back
+// to any available modem.
+func smsEventModemID(msg notifycontent.Message) string {
+	if ev, ok := msg.Event.(notifyevent.SMSEvent); ok {
+		return ev.ModemID
+	}
+	return ""
 }

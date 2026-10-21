@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Plus } from 'lucide-vue-next'
+import { CheckCheck, Plus } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -12,6 +12,7 @@ import ModemMessagesList from '@/components/modem/messages/ModemMessagesList.vue
 import ModemMessagesSearch from '@/components/modem/messages/ModemMessagesSearch.vue'
 import CommunicationHistoryFilter from '@/components/communication/CommunicationHistoryFilter.vue'
 import { Button } from '@/components/ui/button'
+import { useMessageApi } from '@/apis/message'
 import { useModemPhoneCountry } from '@/composables/useModemPhoneCountry'
 import { useModemMessages, type ConversationItem } from '@/composables/useModemMessages'
 
@@ -36,12 +37,26 @@ const { phoneCountry } = useModemPhoneCountry(modemIdRef)
 const searchQuery = ref('')
 const normalizedSearchQuery = computed(() => searchQuery.value.trim())
 const debouncedSearchQuery = refDebounced(normalizedSearchQuery, 250)
-const { items, count, unreadCount, unreadOnly, historical, error, isLoading, deleteConversation } =
+const { items, count, unreadCount, unreadOnly, historical, error, isLoading, fetchMessages, deleteConversation } =
   useModemMessages(modemIdRef, phoneCountry, debouncedSearchQuery)
 
 const deleteOpen = ref(false)
 const deleteLoading = ref(false)
 const deleteTarget = ref<ConversationItem | null>(null)
+const markingAllRead = ref(false)
+const messageApi = useMessageApi()
+const markAllRead = async () => {
+  if (markingAllRead.value) return
+  markingAllRead.value = true
+  try {
+    await messageApi.markAllRead()
+    await fetchMessages()
+  } catch (err) {
+    console.error('[ModemMessagesPanel] Failed to mark all read:', err)
+  } finally {
+    markingAllRead.value = false
+  }
+}
 
 const deleteTargetLabel = computed(() => deleteTarget.value?.participantLabel ?? '')
 const isFabDisabled = computed(() => props.modemId === 'unknown')
@@ -119,6 +134,18 @@ const startConversation = async () => {
     >
       <Plus class="size-4" />
       {{ t('modemDetail.messages.newConversation') }}
+    </Button>
+
+    <Button
+      v-if="unreadCount > 0"
+      type="button"
+      variant="outline"
+      class="w-full gap-2"
+      :disabled="markingAllRead"
+      @click="markAllRead"
+    >
+      <CheckCheck class="size-4" />
+      {{ t('communication.markAllRead') }}
     </Button>
 
     <ModemMessagesSearch v-model="searchQuery" />

@@ -30,6 +30,10 @@ func Compose(lang locale.Tag, ev notifyevent.Event) (Message, error) {
 		subject, headlinePattern := p.OutgoingSMS, p.OutgoingSMSTo
 		if ev.Incoming {
 			subject, headlinePattern = p.IncomingSMS, p.IncomingSMSFrom
+			// Prepend the recipient so the title reads e.g. "收件人: +86… 新短信".
+			if to := ev.DisplayTo(); to != "" {
+				subject = fmt.Sprintf("%s: %s %s", p.Recipient, to, subject)
+			}
 		}
 		return Message{
 			Event:    ev,

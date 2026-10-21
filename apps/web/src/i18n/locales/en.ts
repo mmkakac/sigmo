@@ -481,6 +481,15 @@ const en = {
             description: 'Your PushPlus personal token.',
           },
         },
+        sms: {
+          label: 'SMS Forward',
+          description: 'Forward received SMS to phone numbers as SMS.',
+          recipients: {
+            label: 'Forward to numbers',
+            description: 'Received SMS are forwarded as text messages to these numbers.',
+            placeholder: 'Add a phone number and press Enter…',
+          },
+        },
         http: {
           label: 'HTTP webhook',
           description: 'POST notification events to a custom webhook.',
@@ -665,15 +674,6 @@ const en = {
       },
     },
   },
-    sms: {
-      label: 'SMS Forward',
-      description: 'Forward received SMS to phone numbers as SMS.',
-      recipients: {
-        label: 'Forward to numbers',
-        description: 'Received SMS are forwarded as text messages to these numbers.',
-        placeholder: 'Add a phone number and press Enter…',
-      },
-    },
   messages: {
     title: 'Device Messages',
     subtitle: 'View inbound messages from connected modems.',
@@ -1187,6 +1187,7 @@ const en = {
       internetAPNProfileTitle: 'APN Profile',
       internetPreferencesTitle: 'Connection Preferences',
       internetIPInfoTitle: 'IP Information',
+      internetQueryPublic: 'Query public info',
       internetPublicInfoTitle: 'Public Network',
       internetPublicIP: 'IP',
       internetRegion: 'Region',
