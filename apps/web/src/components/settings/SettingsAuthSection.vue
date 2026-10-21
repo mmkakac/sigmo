@@ -43,6 +43,7 @@ const visibleFields = computed(() =>
     if (props.auth?.mode === 'cloudflare_access') return field.key.startsWith('access')
     if (props.auth?.mode === 'otp') return ['sessionMaxDays', 'otpChannels'].includes(field.key)
     if (props.auth?.mode === 'oidc') return field.key.startsWith('oidc')
+    if (props.auth?.mode === 'password') return ['sessionMaxDays', 'password'].includes(field.key)
     return false
   }),
 )

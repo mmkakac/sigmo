@@ -57,7 +57,7 @@ func Auth(store *auth.Store, settingsStore *settings.Store) echo.MiddlewareFunc 
 				if session.Method != "cloudflare_access" {
 					session, err = store.VerifyAccess(c.Request().Context(), auth.AccessRequest{Policy: cfg, Assertion: c.Request().Header.Get("Cf-Access-Jwt-Assertion")})
 				}
-			case "otp", "oidc":
+			case "otp", "oidc", "password":
 				raw, kind := "", "access"
 				header := c.Request().Header.Get("Authorization")
 				if header != "" {

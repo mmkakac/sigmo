@@ -19,6 +19,7 @@ describe('useSettingsApi', () => {
 
     await useSettingsApi().updateAuth({
       mode: 'otp',
+      password: '',
 
       oidcIssuer: '',
       oidcClientId: '',
@@ -37,6 +38,7 @@ describe('useSettingsApi', () => {
         method: 'PUT',
         body: JSON.stringify({
           mode: 'otp',
+          password: '',
 
           oidcIssuer: '',
           oidcClientId: '',

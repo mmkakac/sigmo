@@ -5,7 +5,15 @@ import SettingsChannelPicker from '@/components/settings/SettingsChannelPicker.v
 import SettingsHeader from '@/components/settings/SettingsHeader.vue'
 import SettingsNotificationSection from '@/components/settings/SettingsNotificationSection.vue'
 import SettingsSaveButton from '@/components/settings/SettingsSaveButton.vue'
+import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
+import {
+  TagsInput,
+  TagsInputInput,
+  TagsInputItem,
+  TagsInputItemDelete,
+  TagsInputItemText,
+} from '@/components/ui/tags-input'
 import { useSettingsContext } from '@/composables/useSettingsContext'
 
 const { t } = useI18n()
@@ -24,6 +32,13 @@ const {
   saveNotifications,
   toggleChannelDetails,
 } = useSettingsContext()
+
+const tagsInputDelimiter = /[,\n\r\t]+/
+
+const cleanKeywords = (keywords: unknown[]) => {
+  return keywords.map((line) => String(line).trim()).filter((line) => line.length > 0)
+}
+
 </script>
 
 <template>
@@ -55,6 +70,39 @@ const {
         :channels="configuredChannelSchemas"
         :disabled="isSaving"
       />
+      <div class="space-y-2 pt-4">
+        <Label for="settings-notifications-keywords">
+          {{ t('settings.notificationKeywordLabel') }}
+        </Label>
+        <p class="text-sm text-muted-foreground">
+          {{ t('settings.notificationKeywordDescription') }}
+        </p>
+        <TagsInput
+          id="settings-notifications-keywords"
+          :model-value="values.notifications.smsFilterKeywords ?? []"
+          :disabled="isSaving"
+          :delimiter="tagsInputDelimiter"
+          add-on-blur
+          add-on-paste
+          add-on-tab
+          @update:model-value="
+            values.notifications.smsFilterKeywords = cleanKeywords($event as unknown[])
+          "
+        >
+          <TagsInputItem
+            v-for="keyword in values.notifications.smsFilterKeywords ?? []"
+            :key="keyword"
+            :value="keyword"
+          >
+            <TagsInputItemText />
+            <TagsInputItemDelete />
+          </TagsInputItem>
+          <TagsInputInput
+            :placeholder="t('settings.notificationKeywordPlaceholder')"
+            class="min-w-24"
+          />
+        </TagsInput>
+      </div>
       <div class="flex justify-end border-t pt-4">
         <SettingsSaveButton
           id="settings-notifications-save"

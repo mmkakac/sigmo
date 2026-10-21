@@ -15,6 +15,9 @@ import (
 type Auth struct {
 	Mode             string           `json:"mode"`
 	SessionMaxDays   int              `json:"sessionMaxDays"`
+	// Password is the fixed login password shared by the web UI and API clients
+	// when Mode is "password".
+	Password         string           `json:"password"`
 	OTP              OTP              `json:"otp"`
 	OIDC             OIDC             `json:"oidc"`
 	CloudflareAccess CloudflareAccess `json:"cloudflareAccess"`
@@ -42,7 +45,7 @@ type CloudflareAccess struct {
 
 // HasMethod reports whether the selected mode permits this login method.
 func (a Auth) HasMethod(method string) bool {
-	return (method == "otp" || method == "oidc") && a.Mode == method
+	return (method == "otp" || method == "oidc" || method == "password") && a.Mode == method
 }
 
 // ApplyDefaults fills only absent values; unknown modes never become anonymous.
@@ -89,7 +92,7 @@ func (s Settings) Validate() error {
 		seen := make(map[string]bool, len(targets))
 		for _, name := range targets {
 			switch name {
-			case "telegram", "http", "email", "bark", "gotify", "sc3", "lark", "wecom":
+			case "telegram", "http", "email", "bark", "gotify", "sc3", "lark", "wecom", "pushplus":
 			default:
 				return fmt.Errorf("unsupported channel %q", name)
 			}
@@ -114,6 +117,10 @@ func (s Settings) Validate() error {
 		}
 		if a.OIDC.ClientID == "" || a.OIDC.ClientSecret == "" || !validSubjects(a.OIDC.AllowedSubjects) {
 			return errors.New("configure OIDC: client credentials and allowed subjects are required")
+		}
+	case "password":
+		if strings.TrimSpace(a.Password) == "" {
+			return errors.New("configure password: a fixed password is required")
 		}
 	case "cloudflare_access":
 		u, err := url.Parse(a.CloudflareAccess.TeamDomain)

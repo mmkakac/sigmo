@@ -215,8 +215,13 @@ func authSettingsFromRequest(current appsettings.Auth, req UpdateAuthRequest) ap
 	if secret == "" && current.OIDC.Issuer == req.OIDCIssuer && current.OIDC.ClientID == req.OIDCClientID {
 		secret = current.OIDC.ClientSecret
 	}
+	// An empty password keeps the stored one, matching the client-secret pattern.
+	password := req.Password
+	if password == "" {
+		password = current.Password
+	}
 	return appsettings.Auth{
-		Mode: req.Mode, SessionMaxDays: req.SessionMaxDays,
+		Mode: req.Mode, SessionMaxDays: req.SessionMaxDays, Password: password,
 		OTP:              appsettings.OTP{Channels: req.OTPChannels},
 		OIDC:             appsettings.OIDC{Issuer: req.OIDCIssuer, ClientID: req.OIDCClientID, ClientSecret: secret, AllowedSubjects: req.OIDCAllowedSubjects},
 		CloudflareAccess: appsettings.CloudflareAccess{TeamDomain: req.AccessTeamDomain, Audience: req.AccessAudience, AllowedSubjects: req.AccessAllowedSubjects},
@@ -224,7 +229,7 @@ func authSettingsFromRequest(current appsettings.Auth, req UpdateAuthRequest) ap
 }
 
 func authValuesFromSettings(auth appsettings.Auth) AuthValues {
-	return AuthValues{Mode: auth.Mode, SessionMaxDays: auth.SessionMaxDays,
+	return AuthValues{Mode: auth.Mode, SessionMaxDays: auth.SessionMaxDays, Password: auth.Password,
 		OTPChannels: slices.Clone(auth.OTP.Channels), OIDCIssuer: auth.OIDC.Issuer, OIDCClientID: auth.OIDC.ClientID, OIDCAllowedSubjects: slices.Clone(auth.OIDC.AllowedSubjects),
 		AccessTeamDomain: auth.CloudflareAccess.TeamDomain, AccessAudience: auth.CloudflareAccess.Audience, AccessAllowedSubjects: slices.Clone(auth.CloudflareAccess.AllowedSubjects)}
 }
@@ -236,6 +241,7 @@ func (h *Handler) UpdateNotifications(c *echo.Context) error {
 		return err
 	}
 	req.Channels = normalizeNames(trimNames(req.Channels))
+	req.SMSFilterKeywords = normalizeKeywords(req.SMSFilterKeywords)
 	var invalid error
 	saved, err := h.store.Update(c.Request().Context(), func(current *appsettings.Settings) error {
 		current.Notifications = req
@@ -310,6 +316,8 @@ func filterChannelValue(name string, channel ChannelValues) ChannelValues {
 		values.Endpoint = channel.Endpoint
 	case "wecom":
 		values.Endpoint = channel.Endpoint
+	case "pushplus":
+		values.BotToken = channel.BotToken
 	case "http":
 		values.Endpoint = channel.Endpoint
 		values.Headers = channel.Headers
@@ -346,6 +354,8 @@ func channelSettingsFromValues(name string, channel ChannelValues) appsettings.C
 		normalized.Endpoint = channel.Endpoint
 	case "wecom":
 		normalized.Endpoint = channel.Endpoint
+	case "pushplus":
+		normalized.BotToken = channel.BotToken
 	case "http":
 		normalized.Endpoint = channel.Endpoint
 		normalized.Headers = normalizeHeaders(channel.Headers)
@@ -390,6 +400,8 @@ func channelSettingsValues(name string, channel appsettings.Channel) ChannelValu
 		values.Endpoint = channel.Endpoint
 	case "wecom":
 		values.Endpoint = channel.Endpoint
+	case "pushplus":
+		values.BotToken = channel.BotToken
 	case "http":
 		values.Endpoint = channel.Endpoint
 		values.Headers = cloneHeaders(channel.Headers)
@@ -434,6 +446,17 @@ func trimStringSlice(values []string) []string {
 		trimmed[i] = strings.TrimSpace(trimmed[i])
 	}
 	return trimmed
+}
+
+// normalizeKeywords trims each keyword and drops empty entries, preserving order.
+func normalizeKeywords(keywords []string) []string {
+	normalized := make([]string, 0, len(keywords))
+	for _, keyword := range trimStringSlice(keywords) {
+		if keyword != "" {
+			normalized = append(normalized, keyword)
+		}
+	}
+	return normalized
 }
 
 func normalizeRecipients(recipients []string) appsettings.Recipients {

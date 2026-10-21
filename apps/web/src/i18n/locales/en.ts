@@ -270,10 +270,15 @@ const en = {
     authOIDC: 'OIDC',
     authNone: 'None',
     authAccess: 'Cloudflare Access',
+    authPassword: 'Password',
     noConfiguredChannels: 'Configure and save a delivery channel first.',
     notificationRouting: 'Notification Channels',
     notificationRoutingDescription:
       'Select where to deliver SMS and call notifications. OTP delivery is selected separately.',
+    notificationKeywordLabel: 'SMS Filter Keywords',
+    notificationKeywordDescription:
+      'Suppress incoming SMS notifications whose text contains any of these keywords. One match is enough; the SMS is still stored.',
+    notificationKeywordPlaceholder: 'Add a keyword and press Enter…',
 
     title: 'Settings',
     description:
@@ -281,7 +286,7 @@ const en = {
     back: 'Back',
     loading: 'Loading settings',
     authTitle: 'Authentication',
-    authDescription: 'Configure OTP, OIDC, or Cloudflare Access and session lifetimes.',
+    authDescription: 'Configure OTP, OIDC, Password, or Cloudflare Access and session lifetimes.',
     proxyTitle: 'Proxy',
     proxyDescription: 'Used when a modem internet connection exposes proxy services.',
     notificationTitle: 'Notification',
@@ -361,6 +366,9 @@ const en = {
         oidcClientId: 'OIDC client ID',
         oidcClientSecret: 'OIDC client secret',
         keepSecret: 'Leave empty to retain the saved secret.',
+        password: 'Fixed password',
+        passwordDescription:
+          'A single password used by both the web UI and API clients. Leave empty to retain the saved password.',
         oidcAllowedSubjects: 'Allowed OIDC subjects (sub)',
         accessTeamDomain: 'Cloudflare Access team URL',
         accessAudience: 'Cloudflare Access application AUD',
@@ -458,6 +466,14 @@ const en = {
             label: 'Webhook',
             description: 'WeCom group bot webhook URL.',
             placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx',
+          },
+        },
+        pushplus: {
+          label: 'PushPlus',
+          description: 'Send notifications through the PushPlus service.',
+          botToken: {
+            label: 'PushPlus token',
+            description: 'Your PushPlus personal token.',
           },
         },
         http: {
@@ -660,6 +676,9 @@ const en = {
     title: 'Verify Access',
     subtitle: 'Choose a login method to access Sigmo.',
     prompt: 'Enter the 6-digit code',
+    passwordPrompt: 'Enter your fixed password to sign in.',
+    passwordPlaceholder: 'Password',
+    signIn: 'Sign in',
     resend: 'Resend',
     resendCountdown: 'Resend ({seconds}s)',
     resendHint: "Didn't get the code?",

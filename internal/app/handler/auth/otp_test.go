@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -18,20 +19,25 @@ import (
 	"github.com/damonto/sigmo/internal/pkg/storage"
 )
 
+// otpCode extracts a six-digit verification code from the webhook text payload.
+var otpCode = regexp.MustCompile(`\b(\d{6})\b`)
+
 func TestOTPHTTPFlow(t *testing.T) {
 	for _, client := range []string{"web", "native"} {
 		t.Run(client, func(t *testing.T) {
 			var code string
 			delivery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var body struct {
-					Payload struct {
-						Code string `json:"code"`
-					} `json:"payload"`
+					Text struct {
+						Content string `json:"content"`
+					} `json:"text"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 					t.Error(err)
 				}
-				code = body.Payload.Code
+				if match := otpCode.FindStringSubmatch(body.Text.Content); match != nil {
+					code = match[1]
+				}
 				w.WriteHeader(200)
 			}))
 			defer delivery.Close()

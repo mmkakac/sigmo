@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -19,12 +20,15 @@ import (
 
 	"github.com/damonto/sigmo/internal/pkg/modem"
 	"github.com/damonto/sigmo/internal/pkg/notify"
-	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
 	"github.com/damonto/sigmo/internal/pkg/webpush"
 	wwanmodem "github.com/damonto/wwan-go/modem"
 )
+
+// nonDigits keeps only the numeric digits of a rendered phone number so
+// assertions stay independent of the E.164 formatting used in message text.
+var nonDigits = regexp.MustCompile(`\D`)
 
 func TestNewRequiresMessageStorage(t *testing.T) {
 	tests := []struct {
@@ -106,21 +110,19 @@ func TestFreshIncomingCall(t *testing.T) {
 func TestForwardCallNotifiesIncomingRingingOnce(t *testing.T) {
 	ctx := t.Context()
 
-	var got []struct {
-		Kind    notifyevent.Kind      `json:"kind"`
-		Payload notifyevent.CallEvent `json:"payload"`
-	}
+	var got []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
 		var payload struct {
-			Kind    notifyevent.Kind      `json:"kind"`
-			Payload notifyevent.CallEvent `json:"payload"`
+			Text struct {
+				Content string `json:"content"`
+			} `json:"text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("Decode() error = %v", err)
 		}
-		got = append(got, payload)
+		got = append(got, payload.Text.Content)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -162,11 +164,9 @@ func TestForwardCallNotifiesIncomingRingingOnce(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("notifications = %d, want 1", len(got))
 	}
-	if got[0].Kind != notifyevent.KindCall {
-		t.Fatalf("kind = %q, want %q", got[0].Kind, notifyevent.KindCall)
-	}
-	if got[0].Payload.From != "+12242255559" || got[0].Payload.Modem != "Office SIM" {
-		t.Fatalf("payload = %+v, want caller and modem alias", got[0].Payload)
+	digits := nonDigits.ReplaceAllString(got[0], "")
+	if !strings.Contains(digits, "12242255559") || !strings.Contains(got[0], "Office SIM") {
+		t.Fatalf("content = %q, want caller and modem alias", got[0])
 	}
 }
 
@@ -210,16 +210,18 @@ func TestForwardCallIncludesModemNumber(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			var got []notifyevent.CallEvent
+			var got []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer r.Body.Close()
 				var payload struct {
-					Payload notifyevent.CallEvent `json:"payload"`
+					Text struct {
+						Content string `json:"content"`
+					} `json:"text"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 					t.Errorf("Decode() error = %v", err)
 				}
-				got = append(got, payload.Payload)
+				got = append(got, payload.Text.Content)
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer server.Close()
@@ -252,8 +254,9 @@ func TestForwardCallIncludesModemNumber(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("notifications = %d, want 1", len(got))
 			}
-			if got[0].From != "+12242255559" || got[0].To != tt.wantTo {
-				t.Fatalf("payload = %+v, want from +12242255559 and to %q", got[0], tt.wantTo)
+			digits := nonDigits.ReplaceAllString(got[0], "")
+			if !strings.Contains(digits, "12242255559") || (tt.wantTo != "" && !strings.Contains(digits, "12242255558")) {
+				t.Fatalf("content = %q, want from +12242255559 and to %q", got[0], tt.wantTo)
 			}
 		})
 	}

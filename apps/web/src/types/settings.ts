@@ -1,7 +1,8 @@
 /** SettingsAuth is the schema editor's flattened representation of the backend policy. */
 export interface SettingsAuth {
-  mode: 'none' | 'otp' | 'oidc' | 'cloudflare_access'
+  mode: 'none' | 'otp' | 'oidc' | 'cloudflare_access' | 'password'
   sessionMaxDays: number
+  password: string
   otpChannels: string[]
   oidcIssuer: string
   oidcClientId: string
@@ -17,6 +18,7 @@ export interface SettingsAuthTest {
 }
 export interface SettingsNotifications {
   channels: string[]
+  smsFilterKeywords: string[]
 }
 
 export type SettingsProxy = {

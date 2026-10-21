@@ -2,6 +2,7 @@ package auth
 
 import (
 	"cmp"
+	"crypto/subtle"
 	"errors"
 	"net"
 	"net/http"
@@ -33,7 +34,7 @@ func New(settingsStore *settings.Store, store *auth.Store) *Handler {
 func (h *Handler) Methods(c *echo.Context) error {
 	cfg := h.settings.Snapshot().Auth
 	methods := []string{}
-	if cfg.HasMethod("otp") || cfg.HasMethod("oidc") {
+	if cfg.HasMethod("otp") || cfg.HasMethod("oidc") || cfg.HasMethod("password") {
 		methods = append(methods, cfg.Mode)
 	}
 	c.Response().Header().Set("Cache-Control", "no-store")
@@ -115,6 +116,13 @@ func (h *Handler) CreateSession(c *echo.Context) error {
 			return h.loginError(c, err)
 		}
 		identity = storage.AuthSession{Method: "otp", Issuer: "sigmo", Subject: "owner", PolicyID: cfg.PolicyID(), ExpiresAt: time.Now().Add(time.Duration(cfg.SessionMaxDays) * 24 * time.Hour)}
+	case "password":
+		// The fixed password is checked against the current policy; web and
+		// native clients both supply it in the Code field without a challenge.
+		if !cfg.HasMethod("password") || !secureEqual(cfg.Password, req.Code) {
+			return h.loginError(c, auth.ErrInvalidLogin)
+		}
+		identity = storage.AuthSession{Method: "password", Issuer: "sigmo", Subject: "owner", PolicyID: cfg.PolicyID(), ExpiresAt: time.Now().Add(time.Duration(cfg.SessionMaxDays) * 24 * time.Hour)}
 	case "oidc":
 		if req.Client != "native" {
 			return h.loginError(c, auth.ErrInvalidLogin)
@@ -277,4 +285,10 @@ func (h *Handler) loginError(c *echo.Context, err error) error {
 
 func setSessionCookie(c *echo.Context, tokens auth.Tokens) {
 	c.SetCookie(&http.Cookie{Name: middleware.SessionCookie, Value: tokens.AccessToken, Path: "/", Expires: tokens.ExpiresAt, HttpOnly: true, Secure: c.Scheme() == "https", SameSite: http.SameSiteLaxMode})
+}
+
+// secureEqual compares two strings in constant time to avoid leaking the length
+// or position of a mismatched password character through timing.
+func secureEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

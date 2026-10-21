@@ -37,6 +37,9 @@ type Updates struct {
 // Notifications selects channels for business events independently of authentication.
 type Notifications struct {
 	Channels []string `json:"channels"`
+	// SMSFilterKeywords suppresses incoming SMS notifications whose text contains
+	// any of the configured keywords. Matching a single keyword is enough.
+	SMSFilterKeywords []string `json:"smsFilterKeywords,omitempty"`
 }
 
 type Channel struct {
@@ -99,6 +102,9 @@ func (c *Settings) ApplyDefaults() {
 	if c.Notifications.Channels == nil {
 		c.Notifications.Channels = []string{}
 	}
+	if c.Notifications.SMSFilterKeywords == nil {
+		c.Notifications.SMSFilterKeywords = []string{}
+	}
 	if c.Channels == nil {
 		c.Channels = map[string]Channel{}
 	}
@@ -137,7 +143,7 @@ func (c *Settings) ProxySettings() Proxy {
 func (c *Settings) Clone() Settings {
 	clone := Settings{
 		Auth:          c.Auth.Clone(),
-		Notifications: Notifications{Channels: slices.Clone(c.Notifications.Channels)},
+		Notifications: Notifications{Channels: slices.Clone(c.Notifications.Channels), SMSFilterKeywords: slices.Clone(c.Notifications.SMSFilterKeywords)},
 		Channels:      make(map[string]Channel, len(c.Channels)),
 		MCP:           c.MCP,
 		Modems:        maps.Clone(c.Modems),

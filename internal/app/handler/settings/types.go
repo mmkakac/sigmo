@@ -18,6 +18,7 @@ type Values struct {
 type AuthValues struct {
 	Mode                  string   `json:"mode"`
 	SessionMaxDays        int      `json:"sessionMaxDays"`
+	Password              string   `json:"password"`
 	OTPChannels           []string `json:"otpChannels"`
 	OIDCIssuer            string   `json:"oidcIssuer"`
 	OIDCClientID          string   `json:"oidcClientId"`

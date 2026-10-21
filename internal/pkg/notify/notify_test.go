@@ -187,8 +187,10 @@ func TestHTTPSend(t *testing.T) {
 	t.Parallel()
 
 	type payload struct {
-		Kind    notifyevent.Kind     `json:"kind"`
-		Payload notifyevent.OTPEvent `json:"payload"`
+		MsgType string `json:"msgtype"`
+		Text    struct {
+			Content string `json:"content"`
+		} `json:"text"`
 	}
 
 	var (
@@ -223,11 +225,11 @@ func TestHTTPSend(t *testing.T) {
 	if err := sender.Send(t.Context(), msg); err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
-	if got.Kind != notifyevent.KindOTP {
-		t.Fatalf("kind = %q, want %q", got.Kind, notifyevent.KindOTP)
+	if got.MsgType != "text" {
+		t.Fatalf("msgtype = %q, want %q", got.MsgType, "text")
 	}
-	if got.Payload.Code != "654321" {
-		t.Fatalf("payload.code = %q, want %q", got.Payload.Code, "654321")
+	if !strings.Contains(got.Text.Content, "654321") {
+		t.Fatalf("content = %q, want OTP code", got.Text.Content)
 	}
 	if gotAuth != "Bearer secret" {
 		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer secret")

@@ -43,7 +43,11 @@ export const useSettingsForm = (
     if (!auth) return
     if (
       key === 'mode' &&
-      (value === 'none' || value === 'otp' || value === 'oidc' || value === 'cloudflare_access')
+      (value === 'none' ||
+        value === 'otp' ||
+        value === 'oidc' ||
+        value === 'cloudflare_access' ||
+        value === 'password')
     ) {
       auth.mode = value
     } else if (key === 'sessionMaxDays' && typeof value === 'number') auth.sessionMaxDays = value
@@ -65,6 +69,9 @@ export const useSettingsForm = (
       }
     } else if (typeof value === 'string') {
       switch (key) {
+        case 'password':
+          auth.password = value
+          break
         case 'oidcIssuer':
           auth.oidcIssuer = value
           break

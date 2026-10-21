@@ -31,13 +31,15 @@ export const useAuthApi = () => ({
       (value.mode !== 'none' &&
         value.mode !== 'otp' &&
         value.mode !== 'oidc' &&
-        value.mode !== 'cloudflare_access') ||
+        value.mode !== 'cloudflare_access' &&
+        value.mode !== 'password') ||
       !('methods' in value) ||
       !Array.isArray(value.methods) ||
       !value.methods.every(
-        (method: unknown): method is 'otp' | 'oidc' => method === 'otp' || method === 'oidc',
+        (method: unknown): method is 'otp' | 'oidc' | 'password' =>
+          method === 'otp' || method === 'oidc' || method === 'password',
       ) ||
-      (value.mode === 'otp' || value.mode === 'oidc'
+      (value.mode === 'otp' || value.mode === 'oidc' || value.mode === 'password'
         ? value.methods.length !== 1 || value.methods[0] !== value.mode
         : value.methods.length !== 0)
     )
@@ -74,6 +76,12 @@ export const useAuthApi = () => ({
     await request('auth/sessions', {
       method: 'POST',
       body: JSON.stringify({ method: 'otp', client: 'web', challengeId, code }),
+    })
+  },
+  async verifyPassword(password: string): Promise<void> {
+    await request('auth/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ method: 'password', client: 'web', code: password }),
     })
   },
   async browser(): Promise<string> {

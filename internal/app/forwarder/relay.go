@@ -291,6 +291,10 @@ func (r *Relay) ForwardRoutedSMS(ctx context.Context, modemID string, message st
 		slog.Debug("skipping known routed SMS", "imei", modemID, "externalKey", message.ExternalKey)
 		return nil
 	}
+	if r.suppressedBySMSFilter(message.Text) {
+		slog.Debug("suppressing routed SMS notification by keyword filter", "imei", modemID, "externalKey", message.ExternalKey)
+		return nil
+	}
 	r.mu.Lock()
 	notifier := r.notifier
 	r.mu.Unlock()
@@ -349,6 +353,10 @@ func (r *Relay) forwardStoredModemSMS(ctx context.Context, receipt modemSMSRecei
 		slog.Debug("skipping stale modem SMS notification", "imei", receipt.stored.ModemID, "refs", receipt.refs, "timestamp", receipt.stored.Timestamp)
 		return cleanupErr
 	}
+	if r.suppressedBySMSFilter(receipt.stored.Text) {
+		slog.Debug("suppressing modem SMS notification by keyword filter", "imei", receipt.stored.ModemID, "refs", receipt.refs)
+		return cleanupErr
+	}
 	r.mu.Lock()
 	notifier := r.notifier
 	r.mu.Unlock()
@@ -370,6 +378,22 @@ func (r *Relay) deleteModemSMS(ctx context.Context, receipt modemSMSReceipt) err
 		return fmt.Errorf("delete modem SMS: %w", err)
 	}
 	return nil
+}
+
+// suppressedBySMSFilter reports whether an incoming SMS should not be pushed
+// because its text contains any configured filter keyword. The message itself
+// is still stored; only the notification is suppressed.
+func (r *Relay) suppressedBySMSFilter(text string) bool {
+	keywords := r.store.Snapshot().Notifications.SMSFilterKeywords
+	if len(keywords) == 0 {
+		return false
+	}
+	for _, keyword := range keywords {
+		if keyword = strings.TrimSpace(keyword); keyword != "" && strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func freshIncomingMessage(message storage.Message, now time.Time) bool {

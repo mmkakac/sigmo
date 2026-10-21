@@ -19,6 +19,7 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     hasOTP: (state) => state.configuration?.methods.includes('otp') === true,
     hasOIDC: (state) => state.configuration?.methods.includes('oidc') === true,
+    hasPassword: (state) => state.configuration?.methods.includes('password') === true,
     isAuthenticated: (state) => state.authenticated,
   },
   actions: {
@@ -29,7 +30,7 @@ export const useAuthStore = defineStore('auth', {
         const configuration = await useAuthApi().methods()
         if (
           configuration.version !== 1 ||
-          !['none', 'otp', 'oidc', 'cloudflare_access'].includes(configuration.mode)
+          !['none', 'otp', 'oidc', 'cloudflare_access', 'password'].includes(configuration.mode)
         )
           throw new Error('Unsupported authentication protocol')
         this.configuration = configuration
@@ -81,6 +82,22 @@ export const useAuthStore = defineStore('auth', {
         this.failed = true
       } finally {
         this.isOpeningBrowser = false
+      }
+    },
+    async loginWithPassword(password: string): Promise<boolean> {
+      if (this.isVerifying || !this.hasPassword || !password) return false
+      this.isVerifying = true
+      try {
+        await useAuthApi().verifyPassword(password)
+        invalidateSession()
+        this.authenticated = true
+        this.failed = false
+        return true
+      } catch {
+        this.failed = true
+        return false
+      } finally {
+        this.isVerifying = false
       }
     },
     async logout(): Promise<void> {

@@ -18,6 +18,7 @@ import (
 	notifylark "github.com/damonto/sigmo/internal/pkg/notify/lark"
 	notifysc3 "github.com/damonto/sigmo/internal/pkg/notify/sc3"
 	notifytelegram "github.com/damonto/sigmo/internal/pkg/notify/telegram"
+	notifypushplus "github.com/damonto/sigmo/internal/pkg/notify/pushplus"
 	notifywebhook "github.com/damonto/sigmo/internal/pkg/notify/webhook"
 	notifywecom "github.com/damonto/sigmo/internal/pkg/notify/wecom"
 	"github.com/damonto/sigmo/internal/pkg/settings"
@@ -101,6 +102,8 @@ func createSender(name string, channel settings.Channel) (Sender, error) {
 		return notifylark.New(&channel)
 	case "wecom":
 		return notifywecom.New(&channel)
+	case "pushplus":
+		return notifypushplus.New(&channel)
 	default:
 		return nil, fmt.Errorf("unsupported channel type: %s", name)
 	}

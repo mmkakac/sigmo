@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { useAuthStore } from '@/stores/auth'
 
@@ -15,6 +16,7 @@ const CODE_LENGTH = 6
 const RESEND_TICK_MS = 1000
 
 const pin = ref('')
+const password = ref('')
 const now = ref(Date.now())
 let tickTimer: ReturnType<typeof setInterval> | null = null
 
@@ -60,6 +62,14 @@ const handleResend = async () => {
   if (!canResend.value) return
   await authStore.sendCode()
   ensureTicker()
+}
+
+const submitPassword = async () => {
+  if (!authStore.hasPassword || !password.value) return
+  const token = await authStore.loginWithPassword(password.value)
+  if (!token) return
+  password.value = ''
+  await router.replace({ name: 'home' })
 }
 
 const reloadLogin = () => window.location.reload()
@@ -135,6 +145,33 @@ watch(
           @click="authStore.browserLogin"
           >{{ t('auth.browserLogin') }}</Button
         >
+        <div
+          v-if="authStore.hasPassword"
+          class="space-y-6"
+        >
+          <p class="text-center text-sm text-muted-foreground">
+            {{ t('auth.passwordPrompt') }}
+          </p>
+          <form
+            class="space-y-4"
+            @submit.prevent="submitPassword"
+          >
+            <Input
+              v-model="password"
+              type="password"
+              autocomplete="current-password"
+              :disabled="authStore.isVerifying"
+              :placeholder="t('auth.passwordPlaceholder')"
+            />
+            <Button
+              type="submit"
+              class="w-full"
+              :disabled="authStore.isVerifying || !password"
+            >
+              {{ t('auth.signIn') }}
+            </Button>
+          </form>
+        </div>
         <div
           v-if="authStore.hasOTP"
           class="space-y-6"

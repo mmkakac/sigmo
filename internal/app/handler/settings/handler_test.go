@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,9 @@ import (
 	"github.com/damonto/sigmo/internal/pkg/storage"
 	appvalidator "github.com/damonto/sigmo/internal/pkg/validator"
 )
+
+// otpCode extracts a six-digit verification code from the webhook text payload.
+var otpCode = regexp.MustCompile(`\b(\d{6})\b`)
 
 func TestSettingsSchema(t *testing.T) {
 	t.Parallel()
@@ -283,10 +287,9 @@ func TestAuthTestDelivery(t *testing.T) {
 			t.Parallel()
 
 			type payload struct {
-				Kind    string `json:"kind"`
-				Payload struct {
-					Code string `json:"code"`
-				} `json:"payload"`
+				Text struct {
+					Content string `json:"content"`
+				} `json:"text"`
 			}
 
 			var httpCalls atomic.Int32
@@ -299,10 +302,9 @@ func TestAuthTestDelivery(t *testing.T) {
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
-				if got.Kind != "otp" {
-					t.Errorf("kind = %q, want otp", got.Kind)
+				if match := otpCode.FindStringSubmatch(got.Text.Content); match != nil {
+					codes <- match[1]
 				}
-				codes <- got.Payload.Code
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer httpServer.Close()

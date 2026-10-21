@@ -13,7 +13,6 @@ import (
 	"time"
 
 	notifycontent "github.com/damonto/sigmo/internal/pkg/notify/content"
-	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 )
 
@@ -21,6 +20,17 @@ type Sender struct {
 	client   *http.Client
 	endpoint string
 	headers  map[string]string
+}
+
+// message uses the same simple body as the WeCom channel so a shared webhook
+// backend can accept both transports without decoding a channel-specific schema.
+type message struct {
+	MsgType string `json:"msgtype"`
+	Text    text   `json:"text"`
+}
+
+type text struct {
+	Content string `json:"content"`
 }
 
 func New(channel *settings.Channel) (*Sender, error) {
@@ -40,20 +50,11 @@ func New(channel *settings.Channel) (*Sender, error) {
 }
 
 func (s *Sender) Send(ctx context.Context, msg notifycontent.Message) error {
-	if msg.Event == nil {
-		return errors.New("http event is required")
-	}
-	body, err := json.Marshal(struct {
-		Kind    notifyevent.Kind  `json:"kind"`
-		Payload notifyevent.Event `json:"payload"`
-	}{
-		Kind:    msg.Event.Kind(),
-		Payload: msg.Event,
-	})
+	payload, err := json.Marshal(message{MsgType: "text", Text: text{Content: msg.Text()}})
 	if err != nil {
-		return fmt.Errorf("encoding http event: %w", err)
+		return fmt.Errorf("encoding http message: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("building http request: %w", err)
 	}

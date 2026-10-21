@@ -16,8 +16,9 @@ const (
 func settingsSchema() Schema {
 	return Schema{
 		Auth: []Field{
-			{Key: "mode", Label: "settings.schema.auth.mode", Control: controlSelect, Options: []Option{{Label: "settings.authNone", Value: "none"}, {Label: "settings.authOTP", Value: "otp"}, {Label: "settings.authOIDC", Value: "oidc"}, {Label: "settings.authAccess", Value: "cloudflare_access"}}},
+			{Key: "mode", Label: "settings.schema.auth.mode", Control: controlSelect, Options: []Option{{Label: "settings.authNone", Value: "none"}, {Label: "settings.authOTP", Value: "otp"}, {Label: "settings.authOIDC", Value: "oidc"}, {Label: "settings.authAccess", Value: "cloudflare_access"}, {Label: "settings.authPassword", Value: "password"}}},
 			numberField("sessionMaxDays", "settings.schema.auth.sessionMaxDays", "settings.schema.auth.sessionMaxDaysDescription", 1, appsettings.MaxSessionMaxDays, true),
+			passwordField("password", "settings.schema.auth.password", "settings.schema.auth.passwordDescription", false),
 			{Key: "otpChannels", Label: "settings.schema.auth.otpChannels", Control: controlChannelList},
 			textField("oidcIssuer", "settings.schema.auth.oidcIssuer", "", "", false),
 			textField("oidcClientId", "settings.schema.auth.oidcClientId", "", "", false),
@@ -85,6 +86,14 @@ func settingsSchema() Schema {
 				Description: "settings.schema.channels.wecom.description",
 				Fields: []Field{
 					textField("endpoint", "settings.schema.channels.wecom.endpoint.label", "settings.schema.channels.wecom.endpoint.description", "settings.schema.channels.wecom.endpoint.placeholder", true),
+				},
+			},
+			{
+				Key:         "pushplus",
+				Label:       "settings.schema.channels.pushplus.label",
+				Description: "settings.schema.channels.pushplus.description",
+				Fields: []Field{
+					passwordField("botToken", "settings.schema.channels.pushplus.botToken.label", "settings.schema.channels.pushplus.botToken.description", true),
 				},
 			},
 			{

@@ -50,6 +50,7 @@ const values = (): SettingsValues => ({
   auth: {
     otpChannels: [],
     mode: 'otp',
+    password: '',
 
     oidcIssuer: '',
     oidcClientId: '',
@@ -60,7 +61,7 @@ const values = (): SettingsValues => ({
     accessAllowedSubjects: [],
     sessionMaxDays: 30,
   },
-  notifications: { channels: [] },
+  notifications: { channels: [], smsFilterKeywords: [] },
   proxy: {
     listenAddress: '127.0.0.1',
     httpPort: 8080,
@@ -612,7 +613,10 @@ describe('Settings notifications', () => {
     await wrapper.get('#settings-notifications-save').trigger('click')
     await flushPromises()
 
-    expect(api.updateNotifications).toHaveBeenLastCalledWith({ channels: ['telegram'] })
+    expect(api.updateNotifications).toHaveBeenLastCalledWith({
+      channels: ['telegram'],
+      smsFilterKeywords: [],
+    })
     expect(toast.success).toHaveBeenCalledWith('settings.saveSuccess')
     expect(api.updateAuth).not.toHaveBeenCalled()
     expect(api.updateNotificationChannel).not.toHaveBeenCalled()
@@ -620,7 +624,10 @@ describe('Settings notifications', () => {
     await wrapper.get('#settings-notifications-channels-telegram').trigger('click')
     await wrapper.get('#settings-notifications-save').trigger('click')
     await flushPromises()
-    expect(api.updateNotifications).toHaveBeenLastCalledWith({ channels: [] })
+    expect(api.updateNotifications).toHaveBeenLastCalledWith({
+      channels: [],
+      smsFilterKeywords: [],
+    })
 
     await navigate(router, '/settings/auth')
     expect(wrapper.get('#settings-auth-otpChannels-telegram').attributes('aria-checked')).toBe(
