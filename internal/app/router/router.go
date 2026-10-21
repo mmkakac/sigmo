@@ -79,7 +79,11 @@ func Register(e *echo.Echo, deps RegisterConfig) error {
 		HTML5:      true,
 		Skipper: func(c *echo.Context) bool {
 			path := c.Request().URL.Path
-			return strings.HasPrefix(path, "/api/") || path == mcpEndpointPath || strings.HasPrefix(path, mcpEndpointPath+"/")
+			// In minimal builds mcpEndpointPath is empty; an empty prefix would
+			// match every path and skip the static file server, so only apply
+			// the MCP skip when the endpoint is actually registered.
+			return strings.HasPrefix(path, "/api/") ||
+				(mcpEndpointPath != "" && (path == mcpEndpointPath || strings.HasPrefix(path, mcpEndpointPath+"/")))
 		},
 	}))
 
