@@ -67,8 +67,8 @@ jobs:
           # 全静态交叉编译：不需要 musl 解释器，不需要 libsqlite3
           # minimal tag：不编译 MCP/Agent Skills、更新设置、web push、native push，减小体积
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-          #  go build -tags minimal -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
-            go build -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
+           go build -tags minimal -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
+          #  go build -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
 
       - name: Inspect binary (confirm static)
         run: |
