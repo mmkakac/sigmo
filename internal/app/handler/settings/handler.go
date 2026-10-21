@@ -91,7 +91,9 @@ func (h *Handler) TestAuth(c *echo.Context) error {
 	notifier, err := notify.ForChannels(&candidate, providers)
 	if err != nil {
 		slog.Error("create authentication test notifier", "error", err, "providers", providers)
-		return httpapi.UnprocessableEntity(c, "test_auth_failed", errAuthTestFailed)
+		// Surface the concrete cause (for example an SMS channel without a
+		// forwarding number) instead of an opaque generic failure.
+		return httpapi.UnprocessableEntity(c, "test_auth_failed", err)
 	}
 	// The "sms" channel transmits through a modem, so attach the relay's modem
 	// transport exactly like the real OTP challenge flow does; otherwise the
@@ -102,7 +104,9 @@ func (h *Handler) TestAuth(c *echo.Context) error {
 	lang := cmp.Or(httpapi.RequestLocale(c), h.store.Locale())
 	if err := notifier.SendOTP(c.Request().Context(), lang, notifyevent.OTPEvent{Code: "000000"}); err != nil {
 		slog.Error("send authentication provider test", "error", err, "providers", providers)
-		return httpapi.UnprocessableEntity(c, "test_auth_failed", errAuthTestFailed)
+		// Report the real delivery error so the UI tells the operator what to fix
+		// (missing forwarding number, no modem, unreachable provider, ...).
+		return httpapi.UnprocessableEntity(c, "test_auth_failed", err)
 	}
 
 	return c.NoContent(http.StatusCreated)
