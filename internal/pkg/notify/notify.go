@@ -19,6 +19,7 @@ import (
 	notifysc3 "github.com/damonto/sigmo/internal/pkg/notify/sc3"
 	notifytelegram "github.com/damonto/sigmo/internal/pkg/notify/telegram"
 	notifypushplus "github.com/damonto/sigmo/internal/pkg/notify/pushplus"
+	smsforward "github.com/damonto/sigmo/internal/pkg/notify/smsforward"
 	notifywebhook "github.com/damonto/sigmo/internal/pkg/notify/webhook"
 	notifywecom "github.com/damonto/sigmo/internal/pkg/notify/wecom"
 	"github.com/damonto/sigmo/internal/pkg/settings"
@@ -32,6 +33,17 @@ type Sender interface {
 // Notifier manages multiple notification channels.
 type Notifier struct {
 	channels map[string]Sender
+}
+
+// AttachSMSForwarder installs the modem transport used by the "sms" forwarding
+// channel, if one is selected. The relay calls this after every reload so the
+// transport always follows the current modem registry.
+func (n *Notifier) AttachSMSForwarder(send func(ctx context.Context, modemID, to, text string) error) {
+	if sender, ok := n.channels["sms"]; ok {
+		if sms, ok := sender.(*smsforward.Sender); ok {
+			sms.Attach(send)
+		}
+	}
 }
 
 // SendOTP succeeds when at least one selected destination accepts the code.
@@ -104,6 +116,8 @@ func createSender(name string, channel settings.Channel) (Sender, error) {
 		return notifywecom.New(&channel)
 	case "pushplus":
 		return notifypushplus.New(&channel)
+	case "sms":
+		return smsforward.New(&channel)
 	default:
 		return nil, fmt.Errorf("unsupported channel type: %s", name)
 	}

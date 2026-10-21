@@ -30,6 +30,7 @@ import (
 	appupdate "github.com/damonto/sigmo/internal/app/update"
 	"github.com/damonto/sigmo/internal/pkg/internet"
 	"github.com/damonto/sigmo/internal/pkg/lpa"
+	"github.com/damonto/sigmo/internal/pkg/message"
 	"github.com/damonto/sigmo/internal/pkg/modem"
 	"github.com/damonto/sigmo/internal/pkg/modemtask"
 	"github.com/damonto/sigmo/internal/pkg/nativepush"
@@ -303,7 +304,7 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 		}
 		return nil
 	})
-	relay, err := forwarder.New(store, registry, db, webPush)
+	relay, err := forwarder.New(store, registry, db, webPush, message.New(db, nil))
 	if err != nil {
 		return fmt.Errorf("configure message relay: %w", err)
 	}
@@ -439,6 +440,9 @@ func Run(ctx context.Context, cfg Config) (runErr error) {
 		return modemtask.RunSMSStorageDefaults(ctx, registry, wwanmodem.MessageStorageDevice)
 	})
 	startRunner("message relay", relay.Run)
+	startRunner("sim auto unlock", func(ctx context.Context) error {
+		return autoUnlockSIMs(ctx, store, registry)
+	})
 
 	for _, runner := range runtime.runners {
 		startRunner(runner.name, runner.run)

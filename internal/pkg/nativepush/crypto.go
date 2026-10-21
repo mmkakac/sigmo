@@ -1,3 +1,5 @@
+//go:build !minimal
+
 // Package nativepush sends encrypted notifications through Sigmo's public APNs gateway.
 package nativepush
 

@@ -9,12 +9,14 @@ type ConnectRequest struct {
 	DefaultRoute bool   `json:"defaultRoute"`
 	ProxyEnabled bool   `json:"proxyEnabled"`
 	AlwaysOn     bool   `json:"alwaysOn"`
+	NoInterface  bool   `json:"noInterface"`
 }
 
 type UpdatePreferencesRequest struct {
 	DefaultRoute bool `json:"defaultRoute"`
 	ProxyEnabled bool `json:"proxyEnabled"`
 	AlwaysOn     bool `json:"alwaysOn"`
+	NoInterface  bool `json:"noInterface"`
 }
 
 type ConnectionResponse struct {
@@ -27,6 +29,7 @@ type ConnectionResponse struct {
 	DefaultRoute    bool     `json:"defaultRoute" jsonschema:"whether this connection installs the system default route"`
 	ProxyEnabled    bool     `json:"proxyEnabled" jsonschema:"whether Sigmo's local HTTP and SOCKS5 proxy is enabled for this connection"`
 	AlwaysOn        bool     `json:"alwaysOn" jsonschema:"whether Sigmo should automatically restore this connection"`
+	NoInterface     bool     `json:"noInterface" jsonschema:"whether the bearer registers on the Internet without configuring any kernel interface or route"`
 	Proxy           Proxy    `json:"proxy" jsonschema:"local proxy status and endpoints; MCP responses redact the password"`
 	InterfaceName   string   `json:"interfaceName" jsonschema:"Linux network interface carrying the connection; empty while disconnected"`
 	Bearer          uint64   `json:"bearer" jsonschema:"process-owned modem bearer identifier; zero while disconnected"`

@@ -3,6 +3,7 @@ package modem
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -103,6 +104,10 @@ func (h *Handler) UnlockSIM(c *echo.Context) error {
 	}
 	if err := modem.UnlockSIM(c.Request().Context(), mmodem.SIMUnlock{PIN: req.PIN, PUK: req.PUK, NewPIN: req.NewPIN, SIMToken: req.SIMToken}); err != nil {
 		return unlockSIMError(c, err)
+	}
+	// Remember the PIN for future automatic unlocks when auto-unlock is enabled.
+	if err := h.settings.SaveUnlockedPin(c.Request().Context(), modem.EquipmentIdentifier, req.PIN); err != nil {
+		slog.Warn("save auto-unlock pin", "imei", modem.EquipmentIdentifier, "error", err)
 	}
 	return c.NoContent(http.StatusNoContent)
 }

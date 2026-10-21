@@ -194,6 +194,7 @@ func Register(e *echo.Echo, deps RegisterConfig) error {
 			protected.GET("/conversations/:conversationId/messages", h.ConversationMessages)
 			protected.PATCH("/conversations/:conversationId", h.UpdateConversation)
 			protected.DELETE("/conversations/:conversationId", h.DeleteConversation)
+			protected.POST("/conversations/read-all", h.MarkAllRead)
 			protected.GET("/modems/:id/messages", h.List)
 			protected.GET("/modems/:id/messages/:participant", h.ListByParticipant)
 			protected.POST("/modems/:id/messages", h.Send)

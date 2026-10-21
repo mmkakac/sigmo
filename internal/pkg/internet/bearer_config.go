@@ -57,6 +57,15 @@ func configureBearer(ctx context.Context, stateStore connectionStateStore, modem
 	}
 	tracked.dns = mergeDNS(ip4.DNS, ip6.DNS)
 
+	// NoInterface keeps the PDP context registered (so the modem appears on
+	// the Internet) without touching the kernel network stack: no interface
+	// setup, no addresses, no routes, therefore no mobile data traffic.
+	if prefs.NoInterface {
+		tracked.prefs = prefs
+		tracked.routeMetric = routeMetric(prefs.DefaultRoute)
+		return tracked, nil
+	}
+
 	addresses, routes, err := addressesAndRoutes(interfaceName, prefs, ip4, ip6)
 	if err != nil {
 		return tracked, err
@@ -318,6 +327,15 @@ func connectionFromBearer(ctx context.Context, bearer *mmodem.Bearer, prefs Pref
 		return nil, ErrUnsupportedIPMethod
 	}
 
+	// In NoInterface mode the modem keeps its own PDP addresses, but no kernel
+	// interface is configured, so the API reports no interface and no addresses.
+	displayInterface := interfaceName
+	displayIPv4, displayIPv6 := ipv4Addresses, ipv6Addresses
+	if prefs.NoInterface {
+		displayInterface = ""
+		displayIPv4, displayIPv6 = []string{}, []string{}
+	}
+
 	return &Connection{
 		Status:          StatusConnected,
 		APN:             prefs.APN,
@@ -328,10 +346,11 @@ func connectionFromBearer(ctx context.Context, bearer *mmodem.Bearer, prefs Pref
 		DefaultRoute:    prefs.DefaultRoute,
 		ProxyEnabled:    prefs.ProxyEnabled,
 		AlwaysOn:        prefs.AlwaysOn,
-		InterfaceName:   interfaceName,
+		NoInterface:     prefs.NoInterface,
+		InterfaceName:   displayInterface,
 		Bearer:          bearer.Path(),
-		IPv4Addresses:   ipv4Addresses,
-		IPv6Addresses:   ipv6Addresses,
+		IPv4Addresses:   displayIPv4,
+		IPv6Addresses:   displayIPv6,
 		DNS:             mergeDNS(ip4.DNS, ip6.DNS),
 		DurationSeconds: stats.Duration,
 		TXBytes:         stats.TXBytes,
@@ -447,6 +466,7 @@ func disconnectedConnection(prefs Preferences) *Connection {
 		DefaultRoute:    prefs.DefaultRoute,
 		ProxyEnabled:    prefs.ProxyEnabled,
 		AlwaysOn:        prefs.AlwaysOn,
+		NoInterface:     prefs.NoInterface,
 		IPv4Addresses:   []string{},
 		IPv6Addresses:   []string{},
 		DNS:             []string{},
@@ -518,6 +538,17 @@ func recoverTrackedConnection(ctx context.Context, stateStore connectionStateSto
 	}
 	if proxyStateFound {
 		prefs.ProxyEnabled = proxyEnabled
+	}
+
+	// NoInterface connections never touch the kernel stack, so there is
+	// nothing to recover and no default route or proxy state to restore.
+	if prefs.NoInterface {
+		return trackedConnection{
+			bearerPath:    bearer.Path(),
+			interfaceName: interfaceName,
+			prefs:         prefs,
+			dns:           mergeDNS(ip4.DNS, ip6.DNS),
+		}, 0, true, nil
 	}
 
 	addresses, routes, err := addressesAndRoutesWithMetric(interfaceName, metric, includeRoutes, ip4, ip6)

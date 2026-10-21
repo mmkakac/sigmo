@@ -109,6 +109,19 @@ func (h *Handler) DeleteConversation(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// MarkAllRead acknowledges every unread message across all conversations and
+// returns the refreshed backend-wide badge state.
+func (h *Handler) MarkAllRead(c *echo.Context) error {
+	if err := h.store.MarkAllConversationsRead(c.Request().Context()); err != nil {
+		return historyError(c, err)
+	}
+	state, err := h.store.MessagesState(c.Request().Context())
+	if err != nil {
+		return historyError(c, err)
+	}
+	return c.JSON(http.StatusOK, state)
+}
+
 func historyError(c *echo.Context, err error) error {
 	if errors.Is(err, storage.ErrInvalidHistoryCursor) {
 		return httpapi.BadRequest(c, "invalid_history_cursor", err)

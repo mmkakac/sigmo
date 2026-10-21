@@ -70,6 +70,7 @@ func (h *Handler) Connect(c *echo.Context) error {
 		DefaultRoute: req.DefaultRoute,
 		ProxyEnabled: req.ProxyEnabled,
 		AlwaysOn:     req.AlwaysOn,
+		NoInterface:  req.NoInterface,
 	}
 	if err := internetcore.ValidatePreferences(prefs); err != nil {
 		return internetError(c, err, "connect_internet_failed")
@@ -96,6 +97,7 @@ func (h *Handler) UpdatePreferences(c *echo.Context) error {
 		DefaultRoute: req.DefaultRoute,
 		ProxyEnabled: req.ProxyEnabled,
 		AlwaysOn:     req.AlwaysOn,
+		NoInterface:  req.NoInterface,
 	})
 	if err != nil {
 		return internetError(c, err, "internet_preferences_update_failed")
@@ -164,6 +166,7 @@ func ResponseFromConnection(connection *internetcore.Connection) ConnectionRespo
 		DefaultRoute:    connection.DefaultRoute,
 		ProxyEnabled:    connection.ProxyEnabled,
 		AlwaysOn:        connection.AlwaysOn,
+		NoInterface:     connection.NoInterface,
 		Proxy:           responseFromProxy(connection.Proxy),
 		InterfaceName:   connection.InterfaceName,
 		Bearer:          connection.Bearer,

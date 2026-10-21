@@ -37,11 +37,21 @@ type UnlockSIMRequest struct {
 type UpdateModemSettingsRequest struct {
 	Alias string `json:"alias"`
 	MSS   int    `json:"mss" validate:"gte=64,lte=254"`
+	// AutoUnlockSIM enables automatic SIM unlocking with the saved PIN.
+	AutoUnlockSIM bool `json:"autoUnlockSim"`
+	// SIMPin is only accepted together with AutoUnlockSIM=true and is stored
+	// for subsequent automatic unlocks.
+	SIMPin string `json:"simPin"`
 }
 
 type ModemSettingsResponse struct {
 	Alias string `json:"alias"`
 	MSS   int    `json:"mss"`
+	// AutoUnlockSIM mirrors the saved preference so the UI can show the toggle.
+	AutoUnlockSIM bool `json:"autoUnlockSim"`
+	// SIMPinSaved reports whether a PIN is stored; the value itself is never
+	// echoed back to the client.
+	SIMPinSaved bool `json:"simPinSaved"`
 }
 
 type ModemResponse struct {

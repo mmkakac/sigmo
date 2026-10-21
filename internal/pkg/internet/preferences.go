@@ -15,6 +15,7 @@ type ConnectionPreferences struct {
 	DefaultRoute bool
 	ProxyEnabled bool
 	AlwaysOn     bool
+	NoInterface  bool
 }
 
 func (c *Connector) UpdatePreferences(ctx context.Context, modem *mmodem.Modem, next ConnectionPreferences) (*Connection, error) {
@@ -76,6 +77,7 @@ func (c *Connector) updateTrackedPreferences(ctx context.Context, modem internet
 	wanted.DefaultRoute = next.DefaultRoute
 	wanted.ProxyEnabled = next.ProxyEnabled
 	wanted.AlwaysOn = next.AlwaysOn
+	wanted.NoInterface = next.NoInterface
 	if wanted.AlwaysOn && modem.profileID() == "" {
 		return tracked, ErrProfileIDRequired
 	}

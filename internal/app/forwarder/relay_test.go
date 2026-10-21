@@ -39,7 +39,7 @@ func TestNewRequiresMessageStorage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := New(settings.NewMemoryStore(settings.Default()), nil, nil, nil)
+			_, err := New(settings.NewMemoryStore(settings.Default()), nil, nil, nil, nil)
 			if err == nil {
 				t.Fatal("New() error = nil, want error")
 			}
@@ -141,7 +141,7 @@ func TestForwardCallNotifiesIncomingRingingOnce(t *testing.T) {
 	current.Modems = map[string]settings.Modem{
 		"modem-1": {Alias: "Office SIM"},
 	}
-	relay, err := New(settings.NewMemoryStore(current), nil, db, nil)
+	relay, err := New(settings.NewMemoryStore(current), nil, db, nil, nil)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -235,7 +235,7 @@ func TestForwardCallIncludesModemNumber(t *testing.T) {
 			current := settings.Default()
 			current.Notifications.Channels = []string{"http"}
 			current.Channels = map[string]settings.Channel{"http": {Endpoint: server.URL}}
-			relay, err := New(settings.NewMemoryStore(current), tt.registry, db, nil)
+			relay, err := New(settings.NewMemoryStore(current), tt.registry, db, nil, nil)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -292,7 +292,7 @@ func TestForwardCallKeepsDedupeWhenWebPushFails(t *testing.T) {
 	current := settings.Default()
 	current.Notifications.Channels = []string{"http"}
 	current.Channels = map[string]settings.Channel{"http": {Endpoint: server.URL}}
-	relay, err := New(settings.NewMemoryStore(current), nil, db, pushClient)
+	relay, err := New(settings.NewMemoryStore(current), nil, db, pushClient, nil)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -794,7 +794,7 @@ func newSMSRelay(t *testing.T) (*Relay, *storage.Store, *atomic.Int32) {
 	current := settings.Default()
 	current.Notifications.Channels = []string{"http"}
 	current.Channels = map[string]settings.Channel{"http": {Endpoint: server.URL}}
-	relay, err := New(settings.NewMemoryStore(current), nil, store, nil)
+	relay, err := New(settings.NewMemoryStore(current), nil, store, nil, nil)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

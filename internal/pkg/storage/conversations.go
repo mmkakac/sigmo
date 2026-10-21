@@ -249,6 +249,30 @@ func (s *Store) UpdateConversationRead(ctx context.Context, update ReadUpdate) e
 	return nil
 }
 
+// MarkAllConversationsRead acknowledges every unread incoming message across
+// all conversations, advances each conversation watermark to its latest
+// message, and clears unread marks. It is the "mark all read" entry point.
+func (s *Store) MarkAllConversationsRead(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin mark all read: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // Rollback after commit is a no-op.
+	if _, err := tx.ExecContext(ctx, `UPDATE conversations SET read_through_id = COALESCE((SELECT MAX(id) FROM messages m WHERE m.conversation_id = conversations.id), read_through_id), marked_unread = 0`); err != nil {
+		return fmt.Errorf("advance conversation watermarks: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET is_read = 1 WHERE is_read = 0`); err != nil {
+		return fmt.Errorf("mark messages read: %w", err)
+	}
+	if err := advanceMessageState(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit mark all read: %w", err)
+	}
+	return nil
+}
+
 // DeleteConversation removes stored history without activating its SIM.
 func (s *Store) DeleteConversation(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)

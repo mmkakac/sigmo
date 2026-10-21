@@ -40,6 +40,9 @@ type Notifications struct {
 	// SMSFilterKeywords suppresses incoming SMS notifications whose text contains
 	// any of the configured keywords. Matching a single keyword is enough.
 	SMSFilterKeywords []string `json:"smsFilterKeywords,omitempty"`
+	// SMSFilterNumbers suppresses incoming SMS notifications whose sender number
+	// matches any of the configured numbers. Matching a single number is enough.
+	SMSFilterNumbers []string `json:"smsFilterNumbers,omitempty"`
 }
 
 type Channel struct {
@@ -68,6 +71,12 @@ type Channel struct {
 type Modem struct {
 	Alias string `json:"alias"`
 	MSS   int    `json:"mss"`
+	// AutoUnlockSIM unlocks the SIM with the saved PIN automatically when the
+	// modem reports a locked SIM state.
+	AutoUnlockSIM bool `json:"autoUnlockSim,omitempty"`
+	// SIMPin is saved only after a successful manual unlock while auto-unlock
+	// is enabled, and is used for subsequent automatic unlocks.
+	SIMPin string `json:"simPin,omitempty"`
 }
 
 type Proxy struct {
@@ -104,6 +113,9 @@ func (c *Settings) ApplyDefaults() {
 	}
 	if c.Notifications.SMSFilterKeywords == nil {
 		c.Notifications.SMSFilterKeywords = []string{}
+	}
+	if c.Notifications.SMSFilterNumbers == nil {
+		c.Notifications.SMSFilterNumbers = []string{}
 	}
 	if c.Channels == nil {
 		c.Channels = map[string]Channel{}

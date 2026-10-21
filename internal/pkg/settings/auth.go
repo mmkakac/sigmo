@@ -92,7 +92,7 @@ func (s Settings) Validate() error {
 		seen := make(map[string]bool, len(targets))
 		for _, name := range targets {
 			switch name {
-			case "telegram", "http", "email", "bark", "gotify", "sc3", "lark", "wecom", "pushplus":
+			case "telegram", "http", "email", "bark", "gotify", "sc3", "lark", "wecom", "pushplus", "sms":
 			default:
 				return fmt.Errorf("unsupported channel %q", name)
 			}

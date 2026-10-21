@@ -242,6 +242,7 @@ func (h *Handler) UpdateNotifications(c *echo.Context) error {
 	}
 	req.Channels = normalizeNames(trimNames(req.Channels))
 	req.SMSFilterKeywords = normalizeKeywords(req.SMSFilterKeywords)
+	req.SMSFilterNumbers = normalizeKeywords(req.SMSFilterNumbers)
 	var invalid error
 	saved, err := h.store.Update(c.Request().Context(), func(current *appsettings.Settings) error {
 		current.Notifications = req
@@ -318,6 +319,8 @@ func filterChannelValue(name string, channel ChannelValues) ChannelValues {
 		values.Endpoint = channel.Endpoint
 	case "pushplus":
 		values.BotToken = channel.BotToken
+	case "sms":
+		values.Recipients = channel.Recipients
 	case "http":
 		values.Endpoint = channel.Endpoint
 		values.Headers = channel.Headers
@@ -356,6 +359,8 @@ func channelSettingsFromValues(name string, channel ChannelValues) appsettings.C
 		normalized.Endpoint = channel.Endpoint
 	case "pushplus":
 		normalized.BotToken = channel.BotToken
+	case "sms":
+		normalized.Recipients = normalizeRecipients(channel.Recipients)
 	case "http":
 		normalized.Endpoint = channel.Endpoint
 		normalized.Headers = normalizeHeaders(channel.Headers)
@@ -402,6 +407,8 @@ func channelSettingsValues(name string, channel appsettings.Channel) ChannelValu
 		values.Endpoint = channel.Endpoint
 	case "pushplus":
 		values.BotToken = channel.BotToken
+	case "sms":
+		values.Recipients = channel.Recipients.Strings()
 	case "http":
 		values.Endpoint = channel.Endpoint
 		values.Headers = cloneHeaders(channel.Headers)

@@ -97,6 +97,14 @@ func settingsSchema() Schema {
 				},
 			},
 			{
+				Key:         "sms",
+				Label:       "settings.schema.channels.sms.label",
+				Description: "settings.schema.channels.sms.description",
+				Fields: []Field{
+					listField("recipients", "settings.schema.channels.sms.recipients.label", "settings.schema.channels.sms.recipients.description", true),
+				},
+			},
+			{
 				Key:         "http",
 				Label:       "settings.schema.channels.http.label",
 				Description: "settings.schema.channels.http.description",

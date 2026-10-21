@@ -12,7 +12,6 @@ import (
 	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
-	"github.com/damonto/sigmo/internal/pkg/webpush"
 )
 
 type ProfileType string
@@ -22,16 +21,23 @@ const (
 	ProfileTypeESIM ProfileType = "esim"
 )
 
+// webPushSender is the small slice of the web push client the scheduler
+// needs. It is an interface so the scheduler does not depend on the optional
+// web push package in minimal builds.
+type webPushSender interface {
+	Send(ctx context.Context, event notifyevent.Event) error
+}
+
 type Scheduler struct {
 	store    *storage.Store
 	settings *settings.Store
-	webPush  *webpush.Client
+	webPush  webPushSender
 	wake     chan struct{}
 	now      func() time.Time
 	deliver  func(context.Context, notifyevent.ReminderEvent) error
 }
 
-func New(store *storage.Store, settingsStore *settings.Store, webPush *webpush.Client) (*Scheduler, error) {
+func New(store *storage.Store, settingsStore *settings.Store, webPush webPushSender) (*Scheduler, error) {
 	if store == nil {
 		return nil, errors.New("reminder storage is required")
 	}

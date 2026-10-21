@@ -1,3 +1,5 @@
+//go:build !minimal
+
 package mcpserver
 
 import sigmoskills "github.com/damonto/sigmo/skills"

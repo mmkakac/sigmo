@@ -17,7 +17,6 @@ import (
 	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
-	"github.com/damonto/sigmo/internal/pkg/webpush"
 	wwanmodem "github.com/damonto/wwan-go/modem"
 )
 
@@ -38,12 +37,20 @@ type modemRegistry interface {
 	Find(ctx context.Context, id string) (*modem.Modem, error)
 }
 
+// webPushSender is the small slice of the web push client the relay needs. It
+// is an interface so the relay does not depend on the optional web push
+// package in minimal builds.
+type webPushSender interface {
+	Send(ctx context.Context, event notifyevent.Event) error
+}
+
 type Relay struct {
 	store         *settings.Store
 	registry      modemRegistry
 	notifier      *notify.Notifier
-	webPush       *webpush.Client
+	webPush       webPushSender
 	messages      *storage.Store
+	messenger     *messagepkg.Messenger
 	mu            sync.Mutex
 	subscriptions map[string]relaySubscription
 	equipment     map[string]string
@@ -68,7 +75,7 @@ type modemSMSReceipt struct {
 	deleter modemSMSDeleter
 }
 
-func New(store *settings.Store, registry modemRegistry, messages *storage.Store, webPush *webpush.Client) (*Relay, error) {
+func New(store *settings.Store, registry modemRegistry, messages *storage.Store, webPush webPushSender, messenger *messagepkg.Messenger) (*Relay, error) {
 	if messages == nil {
 		return nil, errors.New("message storage is required")
 	}
@@ -77,17 +84,20 @@ func New(store *settings.Store, registry modemRegistry, messages *storage.Store,
 	if err != nil {
 		return nil, fmt.Errorf("creating notifier: %w", err)
 	}
-	return &Relay{
+	relay := &Relay{
 		store:         store,
 		registry:      registry,
 		notifier:      notifier,
 		webPush:       webPush,
 		messages:      messages,
+		messenger:     messenger,
 		subscriptions: make(map[string]relaySubscription),
 		equipment:     make(map[string]string),
 		modems:        make(map[string]string),
 		notifiedCalls: make(map[string]struct{}),
-	}, nil
+	}
+	relay.attachSMSForwarder(notifier)
+	return relay, nil
 }
 
 func (r *Relay) Reload() error {
@@ -96,10 +106,35 @@ func (r *Relay) Reload() error {
 	if err != nil {
 		return fmt.Errorf("creating notifier: %w", err)
 	}
+	r.attachSMSForwarder(notifier)
 	r.mu.Lock()
 	r.notifier = notifier
 	r.mu.Unlock()
 	return nil
+}
+
+// attachSMSForwarder binds the "sms" forwarding channel to a transport that
+// transmits through the modem which received the original SMS. Without a
+// messenger the channel is left unattached and reports an error when used.
+func (r *Relay) attachSMSForwarder(notifier *notify.Notifier) {
+	if r.messenger == nil {
+		return
+	}
+	notifier.AttachSMSForwarder(r.sendForwardedSMS)
+}
+
+// sendForwardedSMS transmits a forwarded SMS through the modem that received
+// the original event, matching the modem by its IMEI/ID.
+func (r *Relay) sendForwardedSMS(ctx context.Context, modemID, to, text string) error {
+	m, err := r.registry.Find(ctx, modemID)
+	if err != nil {
+		return fmt.Errorf("find source modem %s: %w", modemID, err)
+	}
+	if m == nil {
+		return fmt.Errorf("source modem %s is gone", modemID)
+	}
+	_, err = r.messenger.Send(ctx, m, to, text)
+	return err
 }
 
 func (r *Relay) Run(ctx context.Context) error {
@@ -291,8 +326,8 @@ func (r *Relay) ForwardRoutedSMS(ctx context.Context, modemID string, message st
 		slog.Debug("skipping known routed SMS", "imei", modemID, "externalKey", message.ExternalKey)
 		return nil
 	}
-	if r.suppressedBySMSFilter(message.Text) {
-		slog.Debug("suppressing routed SMS notification by keyword filter", "imei", modemID, "externalKey", message.ExternalKey)
+	if r.suppressedBySMS(message.Sender, message.Text) {
+		slog.Debug("suppressing routed SMS notification by filter", "imei", modemID, "externalKey", message.ExternalKey)
 		return nil
 	}
 	r.mu.Lock()
@@ -353,8 +388,8 @@ func (r *Relay) forwardStoredModemSMS(ctx context.Context, receipt modemSMSRecei
 		slog.Debug("skipping stale modem SMS notification", "imei", receipt.stored.ModemID, "refs", receipt.refs, "timestamp", receipt.stored.Timestamp)
 		return cleanupErr
 	}
-	if r.suppressedBySMSFilter(receipt.stored.Text) {
-		slog.Debug("suppressing modem SMS notification by keyword filter", "imei", receipt.stored.ModemID, "refs", receipt.refs)
+	if r.suppressedBySMS(receipt.stored.Sender, receipt.stored.Text) {
+		slog.Debug("suppressing modem SMS notification by filter", "imei", receipt.stored.ModemID, "refs", receipt.refs)
 		return cleanupErr
 	}
 	r.mu.Lock()
@@ -380,16 +415,18 @@ func (r *Relay) deleteModemSMS(ctx context.Context, receipt modemSMSReceipt) err
 	return nil
 }
 
-// suppressedBySMSFilter reports whether an incoming SMS should not be pushed
-// because its text contains any configured filter keyword. The message itself
-// is still stored; only the notification is suppressed.
-func (r *Relay) suppressedBySMSFilter(text string) bool {
-	keywords := r.store.Snapshot().Notifications.SMSFilterKeywords
-	if len(keywords) == 0 {
-		return false
-	}
-	for _, keyword := range keywords {
+// suppressedBySMS reports whether an incoming SMS should not be pushed
+// because its sender number or text matches any configured filter. The
+// message itself is still stored; only the notification is suppressed.
+func (r *Relay) suppressedBySMS(sender, text string) bool {
+	current := r.store.Snapshot().Notifications
+	for _, keyword := range current.SMSFilterKeywords {
 		if keyword = strings.TrimSpace(keyword); keyword != "" && strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	for _, number := range current.SMSFilterNumbers {
+		if number = strings.TrimSpace(number); number != "" && strings.Contains(sender, number) {
 			return true
 		}
 	}

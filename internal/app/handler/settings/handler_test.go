@@ -520,9 +520,9 @@ func TestUpdateProxyPersistsSettingsWhenReloadFails(t *testing.T) {
 		Password:      "old",
 	}
 	store := appsettings.NewMemoryStore(settings)
-	relay, err := forwarder.New(store, nil, testStorage(t), nil)
+	relay, err := forwarder.New(store, nil, testStorage(t), nil, nil)
 	if err != nil {
-		t.Fatalf("forwarder.New() error = %v", err)
+		t.Fatalf("forwarder.New(, nil) error = %v", err)
 	}
 	proxy := internet.NewProxy(internet.ProxyConfig{
 		ListenAddress: "127.0.0.1",
@@ -589,9 +589,9 @@ func newTestHandler(t *testing.T) (*appsettings.Store, *Handler) {
 		},
 	}
 	store := appsettings.NewMemoryStore(settings)
-	relay, err := forwarder.New(store, nil, testStorage(t), nil)
+	relay, err := forwarder.New(store, nil, testStorage(t), nil, nil)
 	if err != nil {
-		t.Fatalf("forwarder.New() error = %v", err)
+		t.Fatalf("forwarder.New(, nil) error = %v", err)
 	}
 	internetConnector, err := internet.NewConnector(internet.ConnectorConfig{
 		Proxy: internet.NewProxy(internet.ProxyConfig{}),

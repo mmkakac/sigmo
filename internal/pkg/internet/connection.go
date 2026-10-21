@@ -42,6 +42,10 @@ type Preferences struct {
 	DefaultRoute bool
 	ProxyEnabled bool
 	AlwaysOn     bool
+	// NoInterface keeps the bearer connected for network registration without
+	// configuring any kernel network interface, address, or route. The modem
+	// can then register on the Internet without consuming mobile data.
+	NoInterface bool
 }
 
 type Connection struct {
@@ -54,6 +58,7 @@ type Connection struct {
 	DefaultRoute    bool
 	ProxyEnabled    bool
 	AlwaysOn        bool
+	NoInterface     bool
 	Proxy           ProxyStatus
 	InterfaceName   string
 	Bearer          uint64
