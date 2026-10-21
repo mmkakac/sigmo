@@ -161,10 +161,10 @@ func (r *Relay) SendSMS(ctx context.Context, modemID, to, text string) error {
 		}
 		sort.Strings(paths)
 		if len(paths) > 0 {
-			m, err = r.registry.Find(ctx, paths[0])
-			if err != nil {
-				return fmt.Errorf("find modem %s: %w", paths[0], err)
-			}
+			// Use the modem directly from the registry snapshot. Do not re-resolve
+			// by path through Find, which matches the EquipmentIdentifier, not the
+			// registry map key, and would wrongly report "modem not found".
+			m = modems[paths[0]]
 		}
 	}
 	if m == nil {
