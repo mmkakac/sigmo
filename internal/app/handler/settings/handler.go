@@ -93,6 +93,12 @@ func (h *Handler) TestAuth(c *echo.Context) error {
 		slog.Error("create authentication test notifier", "error", err, "providers", providers)
 		return httpapi.UnprocessableEntity(c, "test_auth_failed", errAuthTestFailed)
 	}
+	// The "sms" channel transmits through a modem, so attach the relay's modem
+	// transport exactly like the real OTP challenge flow does; otherwise the
+	// test would report a failure for a channel that actually works at login.
+	if h.relay != nil {
+		notifier.AttachSMSForwarder(h.relay.SendSMS)
+	}
 	lang := cmp.Or(httpapi.RequestLocale(c), h.store.Locale())
 	if err := notifier.SendOTP(c.Request().Context(), lang, notifyevent.OTPEvent{Code: "000000"}); err != nil {
 		slog.Error("send authentication provider test", "error", err, "providers", providers)

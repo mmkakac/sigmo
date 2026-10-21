@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net"
+	"net/url"
 	"errors"
 	"net/http"
 	"strings"
@@ -32,6 +33,22 @@ func SameOrigin(c *echo.Context) bool {
 	origin := c.Request().Header.Get("Origin")
 	if origin == "" {
 		return c.Request().Header.Get("Sec-Fetch-Site") != "cross-site"
+	}
+	if trustedProxyPeer(c) {
+		// Behind a TLS-terminating or host-rewriting proxy (frp, Nginx, Caddy,
+		// 花生壳 …) the locally observed scheme is meaningless: the proxy may
+		// not forward X-Forwarded-Proto even when the browser is on HTTPS. So
+		// for trusted peers we compare only the host (with port), which keeps
+		// host-based CSRF protection while allowing any scheme.
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" {
+			return false
+		}
+		host := c.Request().Host
+		if forwardedHost := c.Request().Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+			host = forwardedHost
+		}
+		return strings.EqualFold(u.Host, host)
 	}
 	return origin == requestOrigin(c)
 }
