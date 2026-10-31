@@ -545,30 +545,40 @@ func sleepRelayContext(ctx context.Context, delay time.Duration) error {
 }
 
 // watchStatusReports subscribes to the modem's SMS status reports and routes
-// each terminal outcome to the matching pending forwarded delivery.
+// each terminal outcome to the matching pending forwarded delivery. It retries
+// the subscription while the modem is present, mirroring the message
+// subscription loop, so reports are picked up even when the WMS service is not
+// yet ready at boot.
 func (r *Relay) watchStatusReports(ctx context.Context, m *modem.Modem) {
-	stream, err := m.WWAN().WatchStatusReports(ctx)
-	if err != nil {
-		if !errors.Is(err, wwanmodem.ErrNotSupported) {
-			slog.Warn("status report watcher unavailable", "error", err, "imei", m.EquipmentIdentifier)
-		}
-		return
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case result, ok := <-stream:
-			if !ok {
+	for ctx.Err() == nil {
+		stream, err := m.WWAN().WatchStatusReports(ctx)
+		if err != nil {
+			if errors.Is(err, wwanmodem.ErrNotSupported) {
 				return
 			}
-			if result.Err != nil {
-				slog.Warn("status report stream error", "error", result.Err, "imei", m.EquipmentIdentifier)
-				continue
+			slog.Warn("status report watcher unavailable", "error", err, "imei", m.EquipmentIdentifier)
+			if err := sleepRelayContext(ctx, modemSubscriptionRetryDelay); err != nil {
+				return
 			}
-			msg := result.Value
-			final, delivered := classifyDeliveryStatus(msg.DeliveryStatus)
-			r.onStatusReport(m.Path(), msg.Number, final, delivered)
+			continue
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case result, ok := <-stream:
+				if !ok {
+					// Stream closed (modem restart); re-subscribe.
+					break
+				}
+				if result.Err != nil {
+					slog.Warn("status report stream error", "error", result.Err, "imei", m.EquipmentIdentifier)
+					continue
+				}
+				msg := result.Value
+				final, delivered := classifyDeliveryStatus(msg.DeliveryStatus)
+				r.onStatusReport(m.Path(), msg.Number, final, delivered)
+			}
 		}
 	}
 }
