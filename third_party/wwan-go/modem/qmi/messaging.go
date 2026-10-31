@@ -1,0 +1,338 @@
+package qmi
+
+import (
+	"context"
+	"fmt"
+	"slices"
+
+	"github.com/damonto/wwan-go/modem/sms"
+	"github.com/damonto/wwan-go/qcom"
+)
+
+const deviceStorageBit = uint32(1 << 31)
+
+func (*Backend) MessageStorages(context.Context) (MessageStorageInfo, error) {
+	return MessageStorageInfo{
+		Supported: []MessageStorage{MessageStorageDevice, MessageStorageSIM},
+		Default:   MessageStorageDevice,
+	}, nil
+}
+
+// ListMessages returns decodable messages and a MessageListError if any stored
+// PDUs are malformed. Transport errors abort the operation.
+func (b *Backend) ListMessages(ctx context.Context) ([]Message, error) {
+	mode := qcom.WMSMessageModeGW
+	var parts []sms.Part
+	var decodeErrors []*MessageDecodeError
+	for _, storage := range []qcom.WMSStorage{qcom.WMSStorageUIM, qcom.WMSStorageNV} {
+		listed, err := b.client.WMSListMessages(ctx, qcom.WMSListRequest{Storage: storage, MessageMode: &mode})
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range listed {
+			raw, err := b.client.WMSReadRaw(ctx, qcom.WMSReadRequest{Reference: entry.Reference, MessageMode: &mode})
+			if err != nil {
+				return nil, fmt.Errorf("reading message %d: %w", entry.Reference.Index, err)
+			}
+			if raw.Format != qcom.WMSMessageFormatGWPointToPoint {
+				continue
+			}
+			var part sms.Part
+			if err := part.UnmarshalBinary(raw.Data); err != nil {
+				decodeErrors = append(decodeErrors, &MessageDecodeError{
+					Ref: storedMessageRef(entry.Reference), PDU: slices.Clone(raw.Data), Err: err,
+				})
+				continue
+			}
+			part.Message.ID = messageID(entry.Reference)
+			part.Message.Storage = messageStorage(entry.Reference.Storage)
+			part.Message.Refs = []MessageRef{storedMessageRef(entry.Reference)}
+			part.Message.State = messageState(entry.Tag)
+			parts = append(parts, part)
+		}
+	}
+	messages := sms.Assemble(parts)
+	if len(decodeErrors) != 0 {
+		return messages, &MessageListError{Errors: decodeErrors}
+	}
+	return messages, nil
+}
+
+func (b *Backend) ReadStoredMessage(ctx context.Context, ref MessageRef) (Message, error) {
+	reference, err := storedReference(ref)
+	if err != nil {
+		return Message{}, err
+	}
+	return b.readStoredMessage(ctx, reference)
+}
+
+func (b *Backend) ReadMessage(ctx context.Context, id uint32) (Message, error) {
+	return b.readStoredMessage(ctx, messageReference(id))
+}
+
+func (b *Backend) readStoredMessage(ctx context.Context, reference qcom.WMSMessageReference) (Message, error) {
+	mode := qcom.WMSMessageModeGW
+	raw, err := b.client.WMSReadRaw(ctx, qcom.WMSReadRequest{Reference: reference, MessageMode: &mode})
+	if err != nil {
+		return Message{}, fmt.Errorf("reading message %d: %w", reference.Index, err)
+	}
+	if raw.Format != qcom.WMSMessageFormatGWPointToPoint {
+		return Message{}, ErrNotSupported
+	}
+	var part sms.Part
+	if err := part.UnmarshalBinary(raw.Data); err != nil {
+		return Message{}, &MessageDecodeError{
+			Ref: storedMessageRef(reference), PDU: slices.Clone(raw.Data), Err: err,
+		}
+	}
+	part.Message.ID = messageID(reference)
+	part.Message.Storage = messageStorage(reference.Storage)
+	part.Message.Refs = []MessageRef{storedMessageRef(reference)}
+	part.Message.State = messageState(raw.Tag)
+	return sms.CloneMessage(part.Message), nil
+}
+
+func (b *Backend) SendMessage(ctx context.Context, cfg MessageConfig) (SendResult, error) {
+	pdus, err := sms.EncodePDUs(cfg)
+	if err != nil {
+		return SendResult{}, err
+	}
+	result := SendResult{References: make([]uint32, 0, len(pdus)), Messages: make([]Message, 0, len(pdus))}
+	for _, pdu := range pdus {
+		sent, err := b.client.WMSSendRaw(ctx, qcom.WMSMessageFormatGWPointToPoint, pdu, qcom.WMSSendOptions{})
+		if err != nil {
+			return SendResult{}, fmt.Errorf("sending message part %d: %w", len(result.References)+1, err)
+		}
+		reference := uint32(sent.MessageID)
+		result.References = append(result.References, reference)
+		var part sms.Part
+		if err := part.UnmarshalBinary(pdu); err != nil {
+			return SendResult{}, fmt.Errorf("decoding sent message part %d: %w", len(result.References), err)
+		}
+		part.Message.MessageReference = reference
+		part.Message.State = MessageStateStoredSent
+		result.Messages = append(result.Messages, sms.CloneMessage(part.Message))
+	}
+	return result, nil
+}
+
+func (b *Backend) StoreMessage(ctx context.Context, cfg MessageConfig) ([]Message, error) {
+	pdus, err := sms.EncodePDUs(cfg)
+	if err != nil {
+		return nil, err
+	}
+	tag := qcom.WMSTagMONotSent
+	storage, err := wmsStorage(cfg.Storage)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Message, 0, len(pdus))
+	for _, pdu := range pdus {
+		reference, err := b.client.WMSWriteRaw(ctx, qcom.WMSWriteRequest{Storage: storage, Format: qcom.WMSMessageFormatGWPointToPoint, Data: pdu, Tag: &tag})
+		if err != nil {
+			return nil, fmt.Errorf("storing message part %d: %w", len(result)+1, err)
+		}
+		var part sms.Part
+		if err := part.UnmarshalBinary(pdu); err != nil {
+			return nil, fmt.Errorf("decoding stored message part %d: %w", len(result)+1, err)
+		}
+		part.Message.ID = messageID(reference)
+		part.Message.Storage = messageStorage(reference.Storage)
+		part.Message.Refs = []MessageRef{storedMessageRef(reference)}
+		part.Message.State = MessageStateStoredUnsent
+		result = append(result, sms.CloneMessage(part.Message))
+	}
+	return result, nil
+}
+
+func (b *Backend) DeleteMessage(ctx context.Context, id uint32) error {
+	return b.deleteStoredMessage(ctx, messageReference(id))
+}
+
+func (b *Backend) DeleteStoredMessage(ctx context.Context, ref MessageRef) error {
+	reference, err := storedReference(ref)
+	if err != nil {
+		return err
+	}
+	return b.deleteStoredMessage(ctx, reference)
+}
+
+func (b *Backend) deleteStoredMessage(ctx context.Context, reference qcom.WMSMessageReference) error {
+	mode := qcom.WMSMessageModeGW
+	if err := b.client.WMSDelete(ctx, qcom.WMSDeleteRequest{Storage: reference.Storage, Index: &reference.Index, MessageMode: &mode}); err != nil {
+		return fmt.Errorf("deleting message %d: %w", reference.Index, err)
+	}
+	return nil
+}
+
+func (b *Backend) SendPDU(ctx context.Context, pdu []byte) (uint32, error) {
+	result, err := b.client.WMSSendRaw(ctx, qcom.WMSMessageFormatGWPointToPoint, pdu, qcom.WMSSendOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return uint32(result.MessageID), nil
+}
+
+// WatchMessages reports malformed PDUs as MessageDecodeError results and keeps
+// watching. Transport errors and failed positive acknowledgements are terminal.
+func (b *Backend) WatchMessages(ctx context.Context) (<-chan Result[Message], error) {
+	incoming, err := b.client.WMSWatchIncoming(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan Result[Message], 8)
+	go func() {
+		defer close(out)
+		assembler := sms.Assembler{}
+		for raw := range incoming {
+			if raw.ReadError != nil {
+				sendStreamResult(ctx, out, Result[Message]{Err: raw.ReadError})
+				return
+			}
+			if raw.Format != qcom.WMSMessageFormatGWPointToPoint {
+				continue
+			}
+			needsACK := raw.ACKIndicatorKnown && raw.ACKIndicator == qcom.WMSACKRequired
+			ack := qcom.WMSACKRequest{TransactionID: raw.TransactionID, Protocol: qcom.WMSMessageProtocolWCDMA}
+			if raw.SMSOnIMSKnown {
+				ack.SMSOnIMS = &raw.SMSOnIMS
+			}
+			pdu := raw.Data
+			if !raw.Stored {
+				// Transfer-route data is a TPDU. The shared decoder expects the
+				// TS 27.005 PDU form, so prepend an absent SMSC, as QCRIL does.
+				pdu = append([]byte{0}, pdu...)
+			}
+			var part sms.Part
+			if err := part.UnmarshalBinary(pdu); err != nil {
+				if needsACK {
+					// The decode error is authoritative; the negative ACK is best effort.
+					_ = b.client.WMSAcknowledge(ctx, ack)
+				}
+				decodeErr := &MessageDecodeError{PDU: slices.Clone(raw.Data), Err: err}
+				if raw.Stored {
+					decodeErr.Ref = storedMessageRef(raw.Reference)
+				}
+				if !sendStreamResult(ctx, out, Result[Message]{Err: decodeErr}) {
+					return
+				}
+				continue
+			}
+			if raw.Stored {
+				part.Message.ID = messageID(raw.Reference)
+				part.Message.Storage = messageStorage(raw.Reference.Storage)
+				part.Message.Refs = []MessageRef{storedMessageRef(raw.Reference)}
+			}
+			part.Message.State = messageState(raw.Tag)
+			if needsACK {
+				ack.Success = true
+				if err := b.client.WMSAcknowledge(ctx, ack); err != nil {
+					sendStreamResult(ctx, out, Result[Message]{Err: err})
+					return
+				}
+			}
+			message, complete := assembler.Add(part)
+			if complete && !sendStreamResult(ctx, out, Result[Message]{Value: message}) {
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+// WatchStatusReports streams SMS status reports (delivery reports) received for
+// messages that were submitted with DeliveryReport set. Each yielded Message has
+// DeliveryReport=true, MessageReference=TP-MR, Number=recipient address and
+// DeliveryStatus=TP-ST (see 3GPP 23.040). Non-status-report events are ignored.
+func (b *Backend) WatchStatusReports(ctx context.Context) (<-chan Result[Message], error) {
+	reports, err := b.client.WMSWatchStatusReports(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan Result[Message], 8)
+	go func() {
+		defer close(out)
+		for raw := range reports {
+			if raw.ReadError != nil {
+				sendStreamResult(ctx, out, Result[Message]{Err: raw.ReadError})
+				return
+			}
+			if len(raw.Data) == 0 {
+				continue
+			}
+			// Event-report data is a TPDU with the SMSC octet absent.
+			pdu := append([]byte{0}, raw.Data...)
+			var part sms.Part
+			if err := part.UnmarshalBinary(pdu); err != nil {
+				sendStreamResult(ctx, out, Result[Message]{Err: err})
+				continue
+			}
+			if !part.Message.DeliveryReport {
+				continue
+			}
+			if !sendStreamResult(ctx, out, Result[Message]{Value: sms.CloneMessage(part.Message)}) {
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+func storedMessageRef(reference qcom.WMSMessageReference) MessageRef {
+	return MessageRef{Storage: messageStorage(reference.Storage), ID: reference.Index}
+}
+
+func storedReference(ref MessageRef) (qcom.WMSMessageReference, error) {
+	storage, err := wmsStorage(ref.Storage)
+	if err != nil {
+		return qcom.WMSMessageReference{}, err
+	}
+	return qcom.WMSMessageReference{Storage: storage, Index: ref.ID}, nil
+}
+
+func wmsStorage(storage MessageStorage) (qcom.WMSStorage, error) {
+	switch storage {
+	case MessageStorageUnknown, MessageStorageDevice:
+		return qcom.WMSStorageNV, nil
+	case MessageStorageSIM:
+		return qcom.WMSStorageUIM, nil
+	default:
+		return 0, fmt.Errorf("using message storage: storage %d is invalid", storage)
+	}
+}
+
+func messageID(reference qcom.WMSMessageReference) uint32 {
+	if reference.Storage == qcom.WMSStorageNV {
+		return reference.Index | deviceStorageBit
+	}
+	return reference.Index
+}
+
+func messageReference(id uint32) qcom.WMSMessageReference {
+	if id&deviceStorageBit != 0 {
+		return qcom.WMSMessageReference{Storage: qcom.WMSStorageNV, Index: id &^ deviceStorageBit}
+	}
+	return qcom.WMSMessageReference{Storage: qcom.WMSStorageUIM, Index: id}
+}
+
+func messageStorage(storage qcom.WMSStorage) MessageStorage {
+	if storage == qcom.WMSStorageUIM {
+		return MessageStorageSIM
+	}
+	return MessageStorageDevice
+}
+
+func messageState(tag qcom.WMSTag) MessageState {
+	switch tag {
+	case qcom.WMSTagMTRead:
+		return MessageStateReceivedRead
+	case qcom.WMSTagMTNotRead:
+		return MessageStateReceivedUnread
+	case qcom.WMSTagMOSent:
+		return MessageStateStoredSent
+	case qcom.WMSTagMONotSent:
+		return MessageStateStoredUnsent
+	default:
+		return MessageStateUnknown
+	}
+}

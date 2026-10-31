@@ -363,6 +363,11 @@ func (f *fakeModemDevice) sendSMS(context.Context, string, string) (*mmodem.SMS,
 	return nil, f.sendErr
 }
 
+func (f *fakeModemDevice) sendSMSWithDeliveryReport(_ context.Context, _ string, _ string, _ uint32) (*mmodem.SMS, error) {
+	f.sendCalls++
+	return nil, f.sendErr
+}
+
 func (f *fakeModemDevice) listSMS(context.Context) ([]*mmodem.SMS, error) {
 	return nil, nil
 }

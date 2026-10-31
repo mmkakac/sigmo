@@ -59,6 +59,10 @@ type Relay struct {
 	modems        map[string]string
 	notifiedCalls map[string]struct{}
 	deliveries    deliveryTracker
+	pending       map[string]*pendingDelivery
+	pendingMu     sync.Mutex
+	tpCounter     map[string]uint32
+	base          context.Context
 	wg            sync.WaitGroup
 	stopping      bool
 }
@@ -99,6 +103,8 @@ func New(store *settings.Store, registry modemRegistry, messages *storage.Store,
 		modems:        make(map[string]string),
 		notifiedCalls: make(map[string]struct{}),
 		deliveries:    deliveryTracker{active: make(map[string]struct{})},
+		pending:       make(map[string]*pendingDelivery),
+		tpCounter:     make(map[string]uint32),
 	}
 	relay.attachSMSForwarder(notifier)
 	return relay, nil
@@ -150,7 +156,48 @@ type deliveryTracker struct {
 
 func deliveryKey(to, text string) string { return to + "\x00" + text }
 
+// correlationNumber normalises a recipient to the bare-digit form used for
+// correlating a status report (whose TP-RA decodes without a leading "+") to a
+// pending forward (whose canonical address is E.164 with a "+").
+func correlationNumber(value string) string { return strings.TrimPrefix(value, "+") }
+
+// deliveryOutcome is the outcome a status report delivers for one in-flight
+// forwarded SMS. It is signalled from the per-modem status-report watcher to
+// the owner goroutine that drives re-sends.
+type deliveryOutcome int
+
+const (
+	deliveryPending deliveryOutcome = iota
+	deliveryDelivered
+	deliveryFailed
+)
+
+// pendingDelivery tracks one forwarded SMS awaiting an SMSC delivery report.
+// Only an explicit failure report (or a submission failure) triggers a re-send,
+// up to the retry budget. A timeout without any report never re-sends, so a
+// delivered-but-unreported message is not duplicated.
+type pendingDelivery struct {
+	relay    *Relay
+	key      string // to+"\x00"+text (coalescing key)
+	path     string // modem path
+	to       string // canonical recipient
+	text     string
+	policy   smsforward.RetryPolicy
+	modem    *modem.Modem
+	cancel   context.CancelFunc
+	reportCh chan deliveryOutcome
+}
+
+func (p *pendingDelivery) pendingKey() string { return p.path + "\x00" + correlationNumber(p.to) }
+
+// sendWithDeliveryRetry submits a forwarded SMS with a delivery report
+// requested (TP-SRR) and drives re-sends from the SMSC status report. It never
+// blindly re-sends on a timeout: without an explicit failure report, the
+// message is assumed possibly-delivered and left alone.
 func (r *Relay) sendWithDeliveryRetry(ctx context.Context, policy smsforward.RetryPolicy, modemID, to, text string) error {
+	if r.messenger == nil {
+		return errors.New("SMS sending is not available: no messenger")
+	}
 	policy = policy.Normalize()
 	key := deliveryKey(to, text)
 	r.deliveries.mu.Lock()
@@ -160,33 +207,94 @@ func (r *Relay) sendWithDeliveryRetry(ctx context.Context, policy smsforward.Ret
 		return nil
 	}
 	r.deliveries.active[key] = struct{}{}
-	defer r.cancelDelivery(key)
+	r.deliveries.mu.Unlock()
 
-	// A submission that succeeds is considered delivered by the SMSC and is
-	// never re-sent. Only an explicit submission failure triggers re-sends, up
-	// to the retry budget spaced by the configured interval. This keeps
-	// duplicates out of delivered forwards.
-	interval := time.Duration(policy.IntervalMinutes) * time.Minute
+	m, err := r.forwardModem(ctx, modemID)
+	if err != nil {
+		r.cancelDelivery(key)
+		return err
+	}
+	to = messagepkg.CanonicalAddress(ctx, m, to)
+	path := m.Path()
+	pctx, cancel := context.WithCancel(r.relayContext())
+	p := &pendingDelivery{
+		relay: r, key: key, path: path, to: to, text: text,
+		policy: policy, modem: m, cancel: cancel, reportCh: make(chan deliveryOutcome, 1),
+	}
+	r.pendingMu.Lock()
+	r.pending[p.pendingKey()] = p
+	r.pendingMu.Unlock()
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer cancel()
+		p.run(pctx)
+	}()
+	return nil
+}
+
+func (p *pendingDelivery) run(ctx context.Context) {
+	defer p.relay.finishDelivery(p)
+	interval := time.Duration(p.policy.IntervalMinutes) * time.Minute
 	for attempt := 0; ; attempt++ {
-		err := r.SendSMS(ctx, modemID, to, text)
-		if err == nil {
-			return nil
+		tpMR := p.relay.nextTPMR(p.path)
+		if _, err := p.relay.messenger.SendWithDeliveryReport(ctx, p.modem, p.to, p.text, tpMR); err != nil {
+			if attempt >= p.policy.MaxRetries {
+				slog.Warn("sms forward delivery failed after retries", "to", p.to, "modem", p.path, "attempts", attempt+1, "error", err)
+				return
+			}
+			slog.Warn("sms forward submit failed, retrying", "to", p.to, "modem", p.path, "attempt", attempt+1, "error", err)
+			if sleepRelayContext(ctx, interval) != nil {
+				return
+			}
+			continue
 		}
-		if attempt >= policy.MaxRetries {
-			slog.Warn("sms forward failed after retries",
-				"to", to, "modem", modemID, "attempts", attempt+1, "error", err)
-			return err
-		}
-		slog.Warn("sms forward send failed, retrying", "to", to, "modem", modemID,
-			"attempt", attempt+1, "retriesLeft", policy.MaxRetries-attempt, "error", err)
-		timer := time.NewTimer(interval)
+		timer := time.NewTimer(time.Duration(p.policy.TimeoutMinutes) * time.Minute)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			return
+		case outcome := <-p.reportCh:
+			timer.Stop()
+			switch outcome {
+			case deliveryDelivered:
+				return
+			case deliveryFailed:
+				if attempt >= p.policy.MaxRetries {
+					slog.Warn("sms forward rejected by SMSC after retries", "to", p.to, "modem", p.path, "attempts", attempt+1)
+					return
+				}
+				slog.Warn("sms forward rejected by SMSC, retrying", "to", p.to, "modem", p.path, "attempt", attempt+1)
+				if sleepRelayContext(ctx, interval) != nil {
+					return
+				}
+			}
 		case <-timer.C:
+			// No status report within the timeout. Do not re-send: the message
+			// may have been delivered while the report was lost or the carrier
+			// returned no report at all.
+			slog.Warn("sms forward delivery report timed out; not re-sending", "to", p.to, "modem", p.path, "timeoutMinutes", p.policy.TimeoutMinutes)
+			return
 		}
 	}
+}
+
+func (r *Relay) nextTPMR(path string) uint32 {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	ref := (r.tpCounter[path] + 1) & 0xFF
+	if ref == 0 {
+		ref = 1
+	}
+	r.tpCounter[path] = ref
+	return ref
+}
+
+func (r *Relay) finishDelivery(p *pendingDelivery) {
+	r.cancelDelivery(p.key)
+	r.pendingMu.Lock()
+	delete(r.pending, p.pendingKey())
+	r.pendingMu.Unlock()
 }
 
 func (r *Relay) cancelDelivery(key string) {
@@ -195,51 +303,106 @@ func (r *Relay) cancelDelivery(key string) {
 	r.deliveries.mu.Unlock()
 }
 
+// relayContext returns a relay-lifetime context for background delivery
+// monitoring, independent of the short-lived per-event forwarding context.
+func (r *Relay) relayContext() context.Context {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.base == nil {
+		r.base = context.Background()
+	}
+	return r.base
+}
+
+// onStatusReport matches a decoded SMS status report to a pending forwarded
+// delivery and signals the outcome to its owner goroutine.
+func (r *Relay) onStatusReport(path, to string, final, delivered bool) {
+	if !final {
+		return
+	}
+	r.pendingMu.Lock()
+	p := r.pending[path+"\x00"+correlationNumber(to)]
+	r.pendingMu.Unlock()
+	if p == nil {
+		return
+	}
+	outcome := deliveryFailed
+	if delivered {
+		outcome = deliveryDelivered
+	}
+	select {
+	case p.reportCh <- outcome:
+	default:
+		// A report already queued (or the goroutine is between attempts); drop
+		// the duplicate so the owner acts on the first report it sees.
+	}
+}
+
+// classifyDeliveryStatus maps a TP-ST status byte to a final terminal outcome.
+// 0x20-0x2F is delivered; 0x30-0x7F is a failure; 0x00-0x1F are intermediate
+// states (e.g. accepted by the SMSC) and are not treated as final.
+func classifyDeliveryStatus(st uint8) (final, delivered bool) {
+	switch {
+	case st >= 0x20 && st <= 0x2F:
+		return true, true
+	case st >= 0x30 && st <= 0x7F:
+		return true, false
+	default:
+		return false, false
+	}
+}
+
 // SendSMS transmits an SMS through the modem identified by modemID, or through
 // any available modem when modemID is empty (e.g. for OTP codes, which have no
 // originating modem). It is used both by the SMS forwarding channel and by the
 // OTP "sms" delivery channel.
+// forwardModem resolves the modem to send through: the modem identified by
+// modemID, or the first connected SIM deterministically when modemID is empty
+// (e.g. for OTP codes, which have no originating modem).
+func (r *Relay) forwardModem(ctx context.Context, modemID string) (*modem.Modem, error) {
+	if modemID != "" {
+		found, err := r.registry.Find(ctx, modemID)
+		if err != nil {
+			return nil, fmt.Errorf("find source modem %s: %w", modemID, err)
+		}
+		return found, nil
+	}
+	modems, err := r.registry.Modems(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("enumerate modems: %w", err)
+	}
+	paths := make([]string, 0, len(modems))
+	for path, candidate := range modems {
+		if candidate != nil {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	if len(paths) > 0 {
+		// Use the modem directly from the registry snapshot. Do not re-resolve
+		// by path through Find, which matches the EquipmentIdentifier, not the
+		// registry map key, and would wrongly report "modem not found".
+		return modems[paths[0]], nil
+	}
+	return nil, errors.New("no modem available to send SMS")
+}
+
 func (r *Relay) SendSMS(ctx context.Context, modemID, to, text string) error {
 	if r.messenger == nil {
 		return errors.New("SMS sending is not available: no messenger")
 	}
-	var m *modem.Modem
-	if modemID != "" {
-		found, err := r.registry.Find(ctx, modemID)
-		if err != nil {
-			return fmt.Errorf("find source modem %s: %w", modemID, err)
-		}
-		m = found
-	} else {
-		// No originating modem (for example an OTP code): transmit through the
-		// first connected SIM deterministically, so the choice is stable across
-		// calls and across modems.
-		modems, err := r.registry.Modems(ctx)
-		if err != nil {
-			return fmt.Errorf("enumerate modems: %w", err)
-		}
-		paths := make([]string, 0, len(modems))
-		for path, candidate := range modems {
-			if candidate != nil {
-				paths = append(paths, path)
-			}
-		}
-		sort.Strings(paths)
-		if len(paths) > 0 {
-			// Use the modem directly from the registry snapshot. Do not re-resolve
-			// by path through Find, which matches the EquipmentIdentifier, not the
-			// registry map key, and would wrongly report "modem not found".
-			m = modems[paths[0]]
-		}
+	m, err := r.forwardModem(ctx, modemID)
+	if err != nil {
+		return err
 	}
-	if m == nil {
-		return errors.New("no modem available to send SMS")
-	}
-	_, err := r.messenger.Send(ctx, m, to, text)
+	_, err = r.messenger.Send(ctx, m, to, text)
 	return err
 }
 
 func (r *Relay) Run(ctx context.Context) error {
+	r.mu.Lock()
+	r.base = ctx
+	r.mu.Unlock()
 	unsubscribe, err := r.registry.Subscribe(ctx, func(event modem.ModemEvent) error {
 		return r.handleModemEvent(ctx, event)
 	})
@@ -321,7 +484,7 @@ func (r *Relay) addModem(ctx context.Context, path string, m *modem.Modem) {
 		r.equipment[m.EquipmentIdentifier] = path
 		r.modems[path] = m.EquipmentIdentifier
 	}
-	r.wg.Add(1)
+	r.wg.Add(2)
 	r.mu.Unlock()
 	for _, oldCancel := range replaced {
 		oldCancel()
@@ -331,6 +494,10 @@ func (r *Relay) addModem(ctx context.Context, path string, m *modem.Modem) {
 		defer r.wg.Done()
 		defer r.removeModem(path, m.Generation())
 		r.runModemSubscription(modemCtx, m)
+	}()
+	go func() {
+		defer r.wg.Done()
+		r.watchStatusReports(modemCtx, m)
 	}()
 }
 
@@ -377,6 +544,51 @@ func sleepRelayContext(ctx context.Context, delay time.Duration) error {
 	}
 }
 
+// watchStatusReports subscribes to the modem's SMS status reports and routes
+// each terminal outcome to the matching pending forwarded delivery.
+func (r *Relay) watchStatusReports(ctx context.Context, m *modem.Modem) {
+	stream, err := m.WWAN().WatchStatusReports(ctx)
+	if err != nil {
+		if !errors.Is(err, wwanmodem.ErrNotSupported) {
+			slog.Warn("status report watcher unavailable", "error", err, "imei", m.EquipmentIdentifier)
+		}
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case result, ok := <-stream:
+			if !ok {
+				return
+			}
+			if result.Err != nil {
+				slog.Warn("status report stream error", "error", result.Err, "imei", m.EquipmentIdentifier)
+				continue
+			}
+			msg := result.Value
+			final, delivered := classifyDeliveryStatus(msg.DeliveryStatus)
+			r.onStatusReport(m.Path(), msg.Number, final, delivered)
+		}
+	}
+}
+
+// cancelModemPendings cancels the background delivery goroutines for a modem
+// path (or for all modems when path is empty, during shutdown).
+func (r *Relay) cancelModemPendings(path string) {
+	r.pendingMu.Lock()
+	var toCancel []context.CancelFunc
+	for _, p := range r.pending {
+		if path == "" || p.path == path {
+			toCancel = append(toCancel, p.cancel)
+		}
+	}
+	r.pendingMu.Unlock()
+	for _, c := range toCancel {
+		c()
+	}
+}
+
 func (r *Relay) removeModem(path string, generation uint64) {
 	var cancel context.CancelFunc
 	r.mu.Lock()
@@ -398,6 +610,7 @@ func (r *Relay) removeModem(path string, generation uint64) {
 	if cancel != nil {
 		cancel()
 	}
+	r.cancelModemPendings(path)
 }
 
 func (r *Relay) stopAll() {
@@ -412,6 +625,7 @@ func (r *Relay) stopAll() {
 	for _, subscription := range subscriptions {
 		subscription.cancel()
 	}
+	r.cancelModemPendings("")
 	r.wg.Wait()
 }
 

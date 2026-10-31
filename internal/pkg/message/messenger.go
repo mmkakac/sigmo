@@ -39,6 +39,7 @@ type modemDevice interface {
 	modem() *mmodem.Modem
 	profileID(context.Context) (string, error)
 	sendSMS(context.Context, string, string) (*mmodem.SMS, error)
+	sendSMSWithDeliveryReport(context.Context, string, string, uint32) (*mmodem.SMS, error)
 	listSMS(context.Context) ([]*mmodem.SMS, error)
 	deleteSMS(context.Context, []mmodem.MessageRef) error
 	modemID() string
@@ -153,6 +154,38 @@ func (s *Messenger) SendWithProfile(ctx context.Context, modem *mmodem.Modem, re
 		return "", ErrProfileChanged
 	}
 	return s.send(ctx, realModemDevice{modemRef: modem}, req.To, req.Text)
+}
+
+// SendWithDeliveryReport submits an SMS with the delivery-report request bit
+// set and a caller-assigned TP-MR, and records it like a normal outgoing
+// message. It always goes through the modem's direct SMS path (bypassing an
+// IMS route) so the SMSC returns a status report that can be correlated to the
+// reference.
+func (s *Messenger) SendWithDeliveryReport(ctx context.Context, modem *mmodem.Modem, to, text string, reference uint32) (string, error) {
+	if strings.TrimSpace(to) == "" {
+		return "", ErrRecipientRequired
+	}
+	if strings.TrimSpace(text) == "" {
+		return "", ErrTextRequired
+	}
+	to, err := normalizeSMSAddress(to)
+	if err != nil {
+		return "", err
+	}
+	to = CanonicalAddress(ctx, modem, to)
+	device := realModemDevice{modemRef: modem}
+	profileID, err := device.profileID(ctx)
+	if err != nil {
+		return "", err
+	}
+	sms, err := device.sendSMSWithDeliveryReport(ctx, to, text, reference)
+	if err != nil {
+		return "", err
+	}
+	if err := s.insertSentMessage(ctx, messageFromModemSMS(ctx, device, profileID, sms)); err != nil {
+		return "", err
+	}
+	return to, nil
 }
 
 func (s *Messenger) send(ctx context.Context, device modemDevice, to string, text string) (recipient string, sendErr error) {
@@ -387,6 +420,10 @@ func (d realModemDevice) profileID(ctx context.Context) (string, error) {
 
 func (d realModemDevice) sendSMS(ctx context.Context, to string, text string) (*mmodem.SMS, error) {
 	return d.modemRef.Messaging().Send(ctx, to, text)
+}
+
+func (d realModemDevice) sendSMSWithDeliveryReport(ctx context.Context, to string, text string, reference uint32) (*mmodem.SMS, error) {
+	return d.modemRef.Messaging().SendWithDeliveryReport(ctx, to, text, reference)
 }
 
 func (d realModemDevice) listSMS(ctx context.Context) ([]*mmodem.SMS, error) {

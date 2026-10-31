@@ -88,10 +88,28 @@ func (m *Messaging) DefaultStorage(ctx context.Context) (wwanmodem.MessageStorag
 }
 
 func (m *Messaging) Send(ctx context.Context, to, text string) (*SMS, error) {
+	return m.send(ctx, to, text, wwanmodem.MessageConfig{})
+}
+
+// SendWithDeliveryReport sends a message with the delivery-report (TP-SRR)
+// request bit set and a caller-assigned message reference (TP-MR), so the SMSC
+// returns an SMS-STATUS-REPORT that can be correlated back to this submission.
+func (m *Messaging) SendWithDeliveryReport(ctx context.Context, to, text string, reference uint32) (*SMS, error) {
+	return m.send(ctx, to, text, wwanmodem.MessageConfig{
+		DeliveryReport:   true,
+		MessageReference: reference,
+	})
+}
+
+func (m *Messaging) send(ctx context.Context, to, text string, base wwanmodem.MessageConfig) (*SMS, error) {
 	m.modem.smsMu.RLock()
 	storage := m.modem.smsStorage
 	m.modem.smsMu.RUnlock()
-	result, err := m.modem.core.SendMessage(ctx, wwanmodem.MessageConfig{Number: to, Text: text, Storage: storage})
+	cfg := base
+	cfg.Number = to
+	cfg.Text = text
+	cfg.Storage = storage
+	result, err := m.modem.core.SendMessage(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}

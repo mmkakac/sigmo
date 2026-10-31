@@ -41,3 +41,5 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/damonto/wwan-go => ./third_party/wwan-go
