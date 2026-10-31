@@ -118,9 +118,9 @@ export const useSettingsForm = (
 
   const initializeExpandedChannels = () => {
     initializeMissingChannels()
-    const firstConfigured = configuredChannelSchemas.value[0]?.key
+    // Default all channels collapsed; let the user expand explicitly.
     expandedChannels.value = Object.fromEntries(
-      channelSchemas.value.map((channel) => [channel.key, channel.key === firstConfigured]),
+      channelSchemas.value.map((channel) => [channel.key, false]),
     )
   }
 

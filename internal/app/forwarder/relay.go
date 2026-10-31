@@ -130,9 +130,10 @@ func (r *Relay) attachSMSForwarder(notifier *notify.Notifier) {
 // sendForwardedSMS transmits a forwarded SMS through the modem that received
 // the original event, matching the modem by its IMEI/ID.
 // sendForwardedSMS transmits a forwarded SMS. When a retry policy is given (an
-// incoming SMS forward), it also schedules automatic re-sends if no delivery
-// confirmation arrives within the configured timeout; a nil policy (OTP codes)
-// sends once without any automatic re-send.
+// incoming SMS forward), a failed submission to the SMSC is re-sent up to the
+// policy budget; a nil policy (OTP codes) sends once without any automatic
+// re-send. A successful submission is never re-sent, so a delivered forward is
+// never duplicated.
 func (r *Relay) sendForwardedSMS(ctx context.Context, modemID, to, text string, retry *smsforward.RetryPolicy) error {
 	if retry == nil {
 		return r.SendSMS(ctx, modemID, to, text)
@@ -159,41 +160,31 @@ func (r *Relay) sendWithDeliveryRetry(ctx context.Context, policy smsforward.Ret
 		return nil
 	}
 	r.deliveries.active[key] = struct{}{}
-	r.deliveries.mu.Unlock()
-
-	// First attempt is sent synchronously so errors surface to the forwarder.
-	if err := r.SendSMS(ctx, modemID, to, text); err != nil {
-		r.cancelDelivery(key)
-		return err
-	}
-	// The retry loop must outlive the (per-modem) notification context, so it
-	// runs on a cancellation-free view and terminates on its retry budget.
-	go r.runDeliveryRetries(context.WithoutCancel(ctx), policy, key, modemID, to, text)
-	return nil
-}
-
-func (r *Relay) runDeliveryRetries(ctx context.Context, policy smsforward.RetryPolicy, key, modemID, to, text string) {
 	defer r.cancelDelivery(key)
-	timeout := time.Duration(policy.TimeoutMinutes) * time.Minute
+
+	// A submission that succeeds is considered delivered by the SMSC and is
+	// never re-sent. Only an explicit submission failure triggers re-sends, up
+	// to the retry budget spaced by the configured interval. This keeps
+	// duplicates out of delivered forwards.
 	interval := time.Duration(policy.IntervalMinutes) * time.Minute
-	retries := 0
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for {
+	for attempt := 0; ; attempt++ {
+		err := r.SendSMS(ctx, modemID, to, text)
+		if err == nil {
+			return nil
+		}
+		if attempt >= policy.MaxRetries {
+			slog.Warn("sms forward failed after retries",
+				"to", to, "modem", modemID, "attempts", attempt+1, "error", err)
+			return err
+		}
+		slog.Warn("sms forward send failed, retrying", "to", to, "modem", modemID,
+			"attempt", attempt+1, "retriesLeft", policy.MaxRetries-attempt, "error", err)
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
-			return
+			timer.Stop()
+			return ctx.Err()
 		case <-timer.C:
-			if retries >= policy.MaxRetries {
-				slog.Warn("sms forward undelivered after retries",
-					"to", to, "modem", modemID, "retries", retries, "key", key)
-				return
-			}
-			retries++
-			if err := r.SendSMS(ctx, modemID, to, text); err != nil {
-				slog.Warn("sms forward retry failed", "to", to, "modem", modemID, "retry", retries, "error", err)
-			}
-			timer.Reset(interval)
 		}
 	}
 }
