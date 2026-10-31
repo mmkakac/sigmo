@@ -336,6 +336,10 @@ func filterChannelValue(name string, channel ChannelValues) ChannelValues {
 		values.BotToken = channel.BotToken
 	case "sms":
 		values.Recipients = channel.Recipients
+		values.EnableDeliveryRetry = channel.EnableDeliveryRetry
+		values.DeliveryTimeoutMinutes = channel.DeliveryTimeoutMinutes
+		values.MaxDeliveryRetries = channel.MaxDeliveryRetries
+		values.DeliveryRetryMinutes = channel.DeliveryRetryMinutes
 	case "http":
 		values.Endpoint = channel.Endpoint
 		values.Headers = channel.Headers
@@ -376,6 +380,10 @@ func channelSettingsFromValues(name string, channel ChannelValues) appsettings.C
 		normalized.BotToken = channel.BotToken
 	case "sms":
 		normalized.Recipients = normalizeRecipients(channel.Recipients)
+		normalized.EnableDeliveryRetry = channel.EnableDeliveryRetry
+		normalized.DeliveryTimeoutMinutes = channel.DeliveryTimeoutMinutes
+		normalized.MaxDeliveryRetries = channel.MaxDeliveryRetries
+		normalized.DeliveryRetryMinutes = channel.DeliveryRetryMinutes
 	case "http":
 		normalized.Endpoint = channel.Endpoint
 		normalized.Headers = normalizeHeaders(channel.Headers)
@@ -424,6 +432,10 @@ func channelSettingsValues(name string, channel appsettings.Channel) ChannelValu
 		values.BotToken = channel.BotToken
 	case "sms":
 		values.Recipients = channel.Recipients.Strings()
+		values.EnableDeliveryRetry = channel.EnableDeliveryRetry
+		values.DeliveryTimeoutMinutes = channel.DeliveryTimeoutMinutes
+		values.MaxDeliveryRetries = channel.MaxDeliveryRetries
+		values.DeliveryRetryMinutes = channel.DeliveryRetryMinutes
 	case "http":
 		values.Endpoint = channel.Endpoint
 		values.Headers = cloneHeaders(channel.Headers)

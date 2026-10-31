@@ -61,6 +61,12 @@ type ChannelValues struct {
 	SSL          bool   `json:"ssl,omitempty"`
 
 	Priority int `json:"priority,omitempty" validate:"gte=0,lte=10"`
+
+	// SMS forward delivery re-send (sms channel only).
+	EnableDeliveryRetry    bool `json:"enableDeliveryRetry,omitempty"`
+	DeliveryTimeoutMinutes int  `json:"deliveryTimeoutMinutes,omitempty" validate:"omitempty,gte=1,lte=1440"`
+	MaxDeliveryRetries     int  `json:"maxDeliveryRetries,omitempty" validate:"omitempty,gte=0,lte=10"`
+	DeliveryRetryMinutes   int  `json:"deliveryRetryMinutes,omitempty" validate:"omitempty,gte=1,lte=1440"`
 }
 
 type Schema struct {
