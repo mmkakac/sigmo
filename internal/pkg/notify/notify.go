@@ -16,10 +16,10 @@ import (
 	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
 	notifygotify "github.com/damonto/sigmo/internal/pkg/notify/gotify"
 	notifylark "github.com/damonto/sigmo/internal/pkg/notify/lark"
-	notifysc3 "github.com/damonto/sigmo/internal/pkg/notify/sc3"
-	notifytelegram "github.com/damonto/sigmo/internal/pkg/notify/telegram"
 	notifypushplus "github.com/damonto/sigmo/internal/pkg/notify/pushplus"
+	notifysc3 "github.com/damonto/sigmo/internal/pkg/notify/sc3"
 	smsforward "github.com/damonto/sigmo/internal/pkg/notify/smsforward"
+	notifytelegram "github.com/damonto/sigmo/internal/pkg/notify/telegram"
 	notifywebhook "github.com/damonto/sigmo/internal/pkg/notify/webhook"
 	notifywecom "github.com/damonto/sigmo/internal/pkg/notify/wecom"
 	"github.com/damonto/sigmo/internal/pkg/settings"
@@ -38,7 +38,7 @@ type Notifier struct {
 // AttachSMSForwarder installs the modem transport used by the "sms" forwarding
 // channel, if one is selected. The relay calls this after every reload so the
 // transport always follows the current modem registry.
-func (n *Notifier) AttachSMSForwarder(send func(ctx context.Context, modemID, to, text string) error) {
+func (n *Notifier) AttachSMSForwarder(send smsforward.SendFunc) {
 	if sender, ok := n.channels["sms"]; ok {
 		if sms, ok := sender.(*smsforward.Sender); ok {
 			sms.Attach(send)

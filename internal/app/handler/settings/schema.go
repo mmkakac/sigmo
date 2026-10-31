@@ -88,6 +88,9 @@ func settingsSchema() Schema {
 				Description: "settings.schema.channels.sms.description",
 				Fields: []Field{
 					listField("recipients", "settings.schema.channels.sms.recipients.label", "settings.schema.channels.sms.recipients.description", true),
+					numberField("deliveryTimeoutMinutes", "settings.schema.channels.sms.deliveryTimeoutMinutes.label", "settings.schema.channels.sms.deliveryTimeoutMinutes.description", 1, 1440, false),
+					numberField("maxDeliveryRetries", "settings.schema.channels.sms.maxDeliveryRetries.label", "settings.schema.channels.sms.maxDeliveryRetries.description", 0, 10, false),
+					numberField("deliveryRetryMinutes", "settings.schema.channels.sms.deliveryRetryMinutes.label", "settings.schema.channels.sms.deliveryRetryMinutes.description", 1, 1440, false),
 				},
 			},
 			{

@@ -16,6 +16,7 @@ import (
 	"github.com/damonto/sigmo/internal/app/middleware"
 	"github.com/damonto/sigmo/internal/pkg/notify"
 	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
+	smsforward "github.com/damonto/sigmo/internal/pkg/notify/smsforward"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
 )
@@ -27,7 +28,7 @@ type Handler struct {
 	// otpSMSTransport delivers an OTP verification code as an SMS when the
 	// "sms" notification channel is selected for OTP delivery. It is nil until
 	// the server wires a modem-backed transport.
-	otpSMSTransport func(ctx context.Context, modemID, to, text string) error
+	otpSMSTransport func(ctx context.Context, modemID, to, text string, retry *smsforward.RetryPolicy) error
 }
 
 // New uses the same authentication service as the API middleware.
@@ -36,8 +37,9 @@ func New(settingsStore *settings.Store, store *auth.Store) *Handler {
 }
 
 // SetOTPSMSTransport installs the modem transport used to forward OTP codes as
-// SMS through the "sms" channel.
-func (h *Handler) SetOTPSMSTransport(send func(ctx context.Context, modemID, to, text string) error) {
+// SMS through the "sms" channel. The retry policy is always ignored for OTP
+// codes, which must never be re-sent automatically.
+func (h *Handler) SetOTPSMSTransport(send func(ctx context.Context, modemID, to, text string, retry *smsforward.RetryPolicy) error) {
 	h.otpSMSTransport = send
 }
 

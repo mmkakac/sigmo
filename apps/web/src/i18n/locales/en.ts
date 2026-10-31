@@ -491,6 +491,18 @@ const en = {
             description: 'Received SMS are forwarded as text messages to these numbers.',
             placeholder: 'Add a phone number and press Enter…',
           },
+          deliveryTimeoutMinutes: {
+            label: 'Delivery timeout (minutes)',
+            description: 'Re-send if no delivery confirmation arrives within this window (default 30).',
+          },
+          maxDeliveryRetries: {
+            label: 'Max re-send attempts',
+            description: 'How many times to re-send after an unconfirmed timeout (default 1).',
+          },
+          deliveryRetryMinutes: {
+            label: 'Re-send interval (minutes)',
+            description: 'Minutes between consecutive automatic re-sends (default 5).',
+          },
         },
         http: {
           label: 'HTTP webhook',

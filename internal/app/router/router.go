@@ -36,6 +36,7 @@ import (
 	"github.com/damonto/sigmo/internal/pkg/lpa"
 	pmessage "github.com/damonto/sigmo/internal/pkg/message"
 	"github.com/damonto/sigmo/internal/pkg/modem"
+	smsforward "github.com/damonto/sigmo/internal/pkg/notify/smsforward"
 	"github.com/damonto/sigmo/internal/pkg/reminder"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
@@ -107,7 +108,7 @@ func Register(e *echo.Echo, deps RegisterConfig) error {
 
 	authHandler := hauth.New(deps.Store, authStore)
 	if deps.Relay != nil {
-		authHandler.SetOTPSMSTransport(func(ctx context.Context, modemID, to, text string) error {
+		authHandler.SetOTPSMSTransport(func(ctx context.Context, modemID, to, text string, _ *smsforward.RetryPolicy) error {
 			return deps.Relay.SendSMS(ctx, modemID, to, text)
 		})
 	}

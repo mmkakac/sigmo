@@ -1,13 +1,13 @@
 package forwarder
 
 import (
-	"sort"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +16,7 @@ import (
 	"github.com/damonto/sigmo/internal/pkg/modem"
 	"github.com/damonto/sigmo/internal/pkg/notify"
 	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
+	smsforward "github.com/damonto/sigmo/internal/pkg/notify/smsforward"
 	"github.com/damonto/sigmo/internal/pkg/settings"
 	"github.com/damonto/sigmo/internal/pkg/storage"
 	wwanmodem "github.com/damonto/wwan-go/modem"
@@ -57,6 +58,7 @@ type Relay struct {
 	equipment     map[string]string
 	modems        map[string]string
 	notifiedCalls map[string]struct{}
+	deliveries    deliveryTracker
 	wg            sync.WaitGroup
 	stopping      bool
 }
@@ -96,6 +98,7 @@ func New(store *settings.Store, registry modemRegistry, messages *storage.Store,
 		equipment:     make(map[string]string),
 		modems:        make(map[string]string),
 		notifiedCalls: make(map[string]struct{}),
+		deliveries:    deliveryTracker{active: make(map[string]struct{})},
 	}
 	relay.attachSMSForwarder(notifier)
 	return relay, nil
@@ -126,8 +129,79 @@ func (r *Relay) attachSMSForwarder(notifier *notify.Notifier) {
 
 // sendForwardedSMS transmits a forwarded SMS through the modem that received
 // the original event, matching the modem by its IMEI/ID.
-func (r *Relay) sendForwardedSMS(ctx context.Context, modemID, to, text string) error {
-	return r.SendSMS(ctx, modemID, to, text)
+// sendForwardedSMS transmits a forwarded SMS. When a retry policy is given (an
+// incoming SMS forward), it also schedules automatic re-sends if no delivery
+// confirmation arrives within the configured timeout; a nil policy (OTP codes)
+// sends once without any automatic re-send.
+func (r *Relay) sendForwardedSMS(ctx context.Context, modemID, to, text string, retry *smsforward.RetryPolicy) error {
+	if retry == nil {
+		return r.SendSMS(ctx, modemID, to, text)
+	}
+	return r.sendWithDeliveryRetry(ctx, *retry, modemID, to, text)
+}
+
+// deliveryTracker coalesces identical in-flight forwarded SMS deliveries so that
+// a burst of the same content to the same number starts one retry chain, not N.
+type deliveryTracker struct {
+	mu     sync.Mutex
+	active map[string]struct{}
+}
+
+func deliveryKey(to, text string) string { return to + "\x00" + text }
+
+func (r *Relay) sendWithDeliveryRetry(ctx context.Context, policy smsforward.RetryPolicy, modemID, to, text string) error {
+	policy = policy.Normalize()
+	key := deliveryKey(to, text)
+	r.deliveries.mu.Lock()
+	if _, exists := r.deliveries.active[key]; exists {
+		r.deliveries.mu.Unlock()
+		// An identical forward is already being retried; it covers this delivery.
+		return nil
+	}
+	r.deliveries.active[key] = struct{}{}
+	r.deliveries.mu.Unlock()
+
+	// First attempt is sent synchronously so errors surface to the forwarder.
+	if err := r.SendSMS(ctx, modemID, to, text); err != nil {
+		r.cancelDelivery(key)
+		return err
+	}
+	// The retry loop must outlive the (per-modem) notification context, so it
+	// runs on a cancellation-free view and terminates on its retry budget.
+	go r.runDeliveryRetries(context.WithoutCancel(ctx), policy, key, modemID, to, text)
+	return nil
+}
+
+func (r *Relay) runDeliveryRetries(ctx context.Context, policy smsforward.RetryPolicy, key, modemID, to, text string) {
+	defer r.cancelDelivery(key)
+	timeout := time.Duration(policy.TimeoutMinutes) * time.Minute
+	interval := time.Duration(policy.IntervalMinutes) * time.Minute
+	retries := 0
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if retries >= policy.MaxRetries {
+				slog.Warn("sms forward undelivered after retries",
+					"to", to, "modem", modemID, "retries", retries, "key", key)
+				return
+			}
+			retries++
+			if err := r.SendSMS(ctx, modemID, to, text); err != nil {
+				slog.Warn("sms forward retry failed", "to", to, "modem", modemID, "retry", retries, "error", err)
+			}
+			timer.Reset(interval)
+		}
+	}
+}
+
+func (r *Relay) cancelDelivery(key string) {
+	r.deliveries.mu.Lock()
+	delete(r.deliveries.active, key)
+	r.deliveries.mu.Unlock()
 }
 
 // SendSMS transmits an SMS through the modem identified by modemID, or through

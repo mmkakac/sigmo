@@ -2,6 +2,7 @@ package settings
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/damonto/sigmo/internal/pkg/internet"
 	"github.com/damonto/sigmo/internal/pkg/notify"
 	notifyevent "github.com/damonto/sigmo/internal/pkg/notify/event"
+	smsforward "github.com/damonto/sigmo/internal/pkg/notify/smsforward"
 	appsettings "github.com/damonto/sigmo/internal/pkg/settings"
 )
 
@@ -99,7 +101,10 @@ func (h *Handler) TestAuth(c *echo.Context) error {
 	// transport exactly like the real OTP challenge flow does; otherwise the
 	// test would report a failure for a channel that actually works at login.
 	if h.relay != nil {
-		notifier.AttachSMSForwarder(h.relay.SendSMS)
+		notifier.AttachSMSForwarder(func(ctx context.Context, modemID, to, text string, _ *smsforward.RetryPolicy) error {
+			// OTP delivery test must never schedule automatic re-sends.
+			return h.relay.SendSMS(ctx, modemID, to, text)
+		})
 	}
 	lang := cmp.Or(httpapi.RequestLocale(c), h.store.Locale())
 	if err := notifier.SendOTP(c.Request().Context(), lang, notifyevent.OTPEvent{Code: "000000"}); err != nil {
