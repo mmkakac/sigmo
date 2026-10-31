@@ -48,6 +48,11 @@ func (b *Backend) ListMessages(ctx context.Context) ([]Message, error) {
 			part.Message.Storage = messageStorage(entry.Reference.Storage)
 			part.Message.Refs = []MessageRef{storedMessageRef(entry.Reference)}
 			part.Message.State = messageState(entry.Tag)
+			if part.Message.DeliveryReport {
+				// A stored status report (delivery report) is not an incoming
+				// message; it is consumed by WatchStatusReports.
+				continue
+			}
 			parts = append(parts, part)
 		}
 	}
@@ -224,6 +229,19 @@ func (b *Backend) WatchMessages(ctx context.Context) (<-chan Result[Message], er
 				part.Message.Refs = []MessageRef{storedMessageRef(raw.Reference)}
 			}
 			part.Message.State = messageState(raw.Tag)
+			if part.Message.DeliveryReport {
+				// A status report (delivery report) is consumed by
+				// WatchStatusReports, not surfaced as an incoming message. ACK it
+				// so the modem does not redeliver or wedge on the transfer-route.
+				if needsACK {
+					ack.Success = true
+					if err := b.client.WMSAcknowledge(ctx, ack); err != nil {
+						sendStreamResult(ctx, out, Result[Message]{Err: err})
+						return
+					}
+				}
+				continue
+			}
 			if needsACK {
 				ack.Success = true
 				if err := b.client.WMSAcknowledge(ctx, ack); err != nil {
