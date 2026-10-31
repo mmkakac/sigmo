@@ -68,9 +68,10 @@ type Channel struct {
 	Priority int `json:"priority,omitempty"`
 
 	// SMS forward delivery confirmation & retry. Only read for the "sms"
-	// channel: if a forwarded SMS gets no delivery confirmation within
-	// DeliveryTimeoutMinutes, it is re-sent up to MaxDeliveryRetries times,
-	// spaced DeliveryRetryMinutes apart.
+	// channel: if EnableDeliveryRetry is set and a forwarded SMS gets no
+	// delivery confirmation within DeliveryTimeoutMinutes, it is re-sent up to
+	// MaxDeliveryRetries times, spaced DeliveryRetryMinutes apart.
+	EnableDeliveryRetry  bool `json:"enableDeliveryRetry,omitempty"`
 	DeliveryTimeoutMinutes int `json:"deliveryTimeoutMinutes,omitempty"`
 	MaxDeliveryRetries     int `json:"maxDeliveryRetries,omitempty"`
 	DeliveryRetryMinutes   int `json:"deliveryRetryMinutes,omitempty"`

@@ -491,6 +491,10 @@ const en = {
             description: 'Received SMS are forwarded as text messages to these numbers.',
             placeholder: 'Add a phone number and press Enter…',
           },
+          enableDeliveryRetry: {
+            label: 'Enable delivery re-send',
+            description: 'Automatically re-send a forward when no delivery confirmation arrives.',
+          },
           deliveryTimeoutMinutes: {
             label: 'Delivery timeout (minutes)',
             description: 'Re-send if no delivery confirmation arrives within this window (default 30).',

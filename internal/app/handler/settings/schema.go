@@ -88,6 +88,7 @@ func settingsSchema() Schema {
 				Description: "settings.schema.channels.sms.description",
 				Fields: []Field{
 					listField("recipients", "settings.schema.channels.sms.recipients.label", "settings.schema.channels.sms.recipients.description", true),
+					switchField("enableDeliveryRetry", "settings.schema.channels.sms.enableDeliveryRetry.label", "settings.schema.channels.sms.enableDeliveryRetry.description", true),
 					numberField("deliveryTimeoutMinutes", "settings.schema.channels.sms.deliveryTimeoutMinutes.label", "settings.schema.channels.sms.deliveryTimeoutMinutes.description", 1, 1440, false),
 					numberField("maxDeliveryRetries", "settings.schema.channels.sms.maxDeliveryRetries.label", "settings.schema.channels.sms.maxDeliveryRetries.description", 0, 10, false),
 					numberField("deliveryRetryMinutes", "settings.schema.channels.sms.deliveryRetryMinutes.label", "settings.schema.channels.sms.deliveryRetryMinutes.description", 1, 1440, false),
@@ -165,6 +166,11 @@ func listField(key string, label string, description string, required bool) Fiel
 		Control:     controlList,
 		Required:    required,
 	}
+}
+
+func switchField(key string, label string, description string, defaultValue bool) Field {
+	d := defaultValue
+	return Field{Key: key, Label: label, Description: description, Control: controlSwitch, Default: d}
 }
 
 func numberField(key string, label string, description string, minValue int, maxValue int, required bool) Field {

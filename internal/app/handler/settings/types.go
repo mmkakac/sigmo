@@ -86,6 +86,7 @@ type Field struct {
 	Placeholder string   `json:"placeholder,omitempty"`
 	Min         *int     `json:"min,omitempty"`
 	Max         *int     `json:"max,omitempty"`
+	Default     any      `json:"default,omitempty"`
 	Options     []Option `json:"options,omitempty"`
 }
 

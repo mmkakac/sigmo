@@ -100,8 +100,8 @@ export const useSettingsForm = (
   const defaultChannel = (schema: SettingsChannelSchema): SettingsChannel => {
     const channel: Record<string, unknown> = {}
     for (const field of schema.fields) {
-      if (field.control === 'switch') channel[field.key] = false
-      if (field.control === 'number') channel[field.key] = 0
+      if (field.control === 'switch') channel[field.key] = field.default ?? false
+      if (field.control === 'number') channel[field.key] = field.default ?? 0
       if (field.control === 'list') channel[field.key] = []
       if (field.control === 'keyValue') channel[field.key] = {}
       if (field.control === 'select') channel[field.key] = field.options?.[0]?.value ?? ''

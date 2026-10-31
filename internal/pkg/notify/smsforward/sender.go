@@ -57,17 +57,23 @@ type Sender struct {
 }
 
 // New creates an SMS-forward sender from a channel's configured recipients and
-// delivery-retry settings.
+// delivery-retry settings. Automatic re-sending is only armed when the channel
+// explicitly enables it (EnableDeliveryRetry), so the switch in settings is the
+// single source of truth for whether unconfirmed forwards are re-sent.
 func New(channel *settings.Channel) (*Sender, error) {
 	if channel == nil {
 		return nil, errors.New("nil sms channel")
 	}
-	rp := RetryPolicy{
-		TimeoutMinutes:  channel.DeliveryTimeoutMinutes,
-		MaxRetries:      channel.MaxDeliveryRetries,
-		IntervalMinutes: channel.DeliveryRetryMinutes,
-	}.Normalize()
-	return &Sender{numbers: channel.Recipients.Strings(), retry: &rp}, nil
+	s := &Sender{numbers: channel.Recipients.Strings()}
+	if channel.EnableDeliveryRetry {
+		rp := RetryPolicy{
+			TimeoutMinutes:  channel.DeliveryTimeoutMinutes,
+			MaxRetries:      channel.MaxDeliveryRetries,
+			IntervalMinutes: channel.DeliveryRetryMinutes,
+		}.Normalize()
+		s.retry = &rp
+	}
+	return s, nil
 }
 
 // Attach installs the modem transport used to deliver forwarded SMS. It is set

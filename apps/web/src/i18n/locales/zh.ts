@@ -476,6 +476,10 @@ const zh = {
             description: '收到的短信会以短信形式转发到这些号码。',
             placeholder: '输入手机号后按回车添加…',
           },
+          enableDeliveryRetry: {
+            label: '启用送达重发',
+            description: '转发后未收到送达确认时自动重发。',
+          },
           deliveryTimeoutMinutes: {
             label: '送达超时（分钟）',
             description: '转发后若在此时长内没有送达确认，将自动重发（默认 30）。',

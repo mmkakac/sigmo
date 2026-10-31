@@ -69,6 +69,7 @@ export type SettingsField = {
   placeholder?: string
   min?: number
   max?: number
+  default?: unknown
   options?: SettingsOption[]
 }
 
