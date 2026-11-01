@@ -3,6 +3,7 @@ package qmi
 import (
 	"context"
 	"fmt"
+	"log"
 	"slices"
 
 	"github.com/damonto/wwan-go/modem/sms"
@@ -233,6 +234,7 @@ func (b *Backend) WatchMessages(ctx context.Context) (<-chan Result[Message], er
 				// A status report (delivery report) is consumed by
 				// WatchStatusReports, not surfaced as an incoming message. ACK it
 				// so the modem does not redeliver or wedge on the transfer-route.
+				log.Printf("qmi: filtered incoming delivery report mr=%d to=%q st=0x%02X", part.Message.MessageReference, part.Message.Number, part.Message.DeliveryStatus)
 				if needsACK {
 					ack.Success = true
 					if err := b.client.WMSAcknowledge(ctx, ack); err != nil {
@@ -282,12 +284,15 @@ func (b *Backend) WatchStatusReports(ctx context.Context) (<-chan Result[Message
 			pdu := append([]byte{0}, raw.Data...)
 			var part sms.Part
 			if err := part.UnmarshalBinary(pdu); err != nil {
+				log.Printf("qmi: status report decode failed (%d bytes): %X err=%v", len(raw.Data), raw.Data, err)
 				sendStreamResult(ctx, out, Result[Message]{Err: err})
 				continue
 			}
 			if !part.Message.DeliveryReport {
+				log.Printf("qmi: status report event is not a delivery report (mti=0x%02X text=%q len=%d)", raw.Data[0], part.Message.Text, len(raw.Data))
 				continue
 			}
+			log.Printf("qmi: delivery report mr=%d to=%q st=0x%02X", part.Message.MessageReference, part.Message.Number, part.Message.DeliveryStatus)
 			if !sendStreamResult(ctx, out, Result[Message]{Value: sms.CloneMessage(part.Message)}) {
 				return
 			}

@@ -324,8 +324,10 @@ func (r *Relay) onStatusReport(path, to string, final, delivered bool) {
 	p := r.pending[path+"\x00"+correlationNumber(to)]
 	r.pendingMu.Unlock()
 	if p == nil {
+		slog.Warn("status report did not match a pending forward", "modem", path, "to", to, "final", final, "delivered", delivered)
 		return
 	}
+	slog.Info("status report matched pending forward", "modem", path, "to", to, "final", final, "delivered", delivered)
 	outcome := deliveryFailed
 	if delivered {
 		outcome = deliveryDelivered
@@ -577,6 +579,10 @@ func (r *Relay) watchStatusReports(ctx context.Context, m *modem.Modem) {
 				}
 				msg := result.Value
 				final, delivered := classifyDeliveryStatus(msg.DeliveryStatus)
+				slog.Info("status report received", "imei", m.EquipmentIdentifier,
+					"modem", m.Path(), "mr", msg.MessageReference, "to", msg.Number,
+					"st", fmt.Sprintf("0x%02X", msg.DeliveryStatus),
+					"delivered", delivered, "final", final)
 				r.onStatusReport(m.Path(), msg.Number, final, delivered)
 			}
 		}

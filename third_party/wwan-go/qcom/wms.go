@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -759,10 +760,13 @@ func (c *Client) WMSWatchStatusReports(ctx context.Context) (<-chan WMSStatusRep
 	if err != nil {
 		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
 	}
-	// Deliver status reports to this client instead of storing them on the SIM.
+	// Ask the modem to route status reports to this client instead of storing
+	// them on the SIM. This is best-effort: on firmware that does not support it,
+	// status reports still arrive as transfer-route message events on the shared
+	// MessageWMSEventReport stream, which we subscribe to below.
 	statusReportToClient := WMSStatusReportToClient
 	if err := c.WMSSetRoutes(ctx, nil, &statusReportToClient); err != nil {
-		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
+		log.Printf("wms: route status reports to client failed (continuing): %v", err)
 	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
@@ -771,9 +775,11 @@ func (c *Client) WMSWatchStatusReports(ctx context.Context) (<-chan WMSStatusRep
 		cancel()
 		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
 	}
+	// Enable the status-report indication bit if the modem accepts it. Do not
+	// fail the whole watcher when it is rejected: the report still arrives as a
+	// transfer-route event on the stream above.
 	if err := c.acquireWMSIndication(ctx, wmsIndicationStatusReport); err != nil {
-		cancel()
-		return nil, err
+		log.Printf("wms: status report indication unavailable (continuing): %v", err)
 	}
 
 	out := make(chan WMSStatusReportEvent, 8)
@@ -798,6 +804,7 @@ func (c *Client) WMSWatchStatusReports(ctx context.Context) (<-chan WMSStatusRep
 				message.Data = raw.Data
 				message.ReadError = readErr
 			}
+			log.Printf("wms: status report event stored=%t data=%d bytes: %X", message.Stored, len(message.Data), truncateHex(message.Data, 48))
 			ev := WMSStatusReportEvent{Reference: message.Reference, Data: message.Data, ReadError: message.ReadError}
 			select {
 			case out <- ev:
@@ -1208,4 +1215,11 @@ func (a *WMSSMSCAddress) UnmarshalBinary(value []byte) error {
 		Digits: string(value[4 : 4+length]),
 	}
 	return nil
+}
+
+func truncateHex(b []byte, max int) string {
+	if max < 0 || len(b) <= max {
+		return fmt.Sprintf("%X", b)
+	}
+	return fmt.Sprintf("%X…(+%d)", b[:max], len(b)-max)
 }
