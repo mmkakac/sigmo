@@ -64,6 +64,39 @@ func (b *Backend) ListMessages(ctx context.Context) ([]Message, error) {
 	return messages, nil
 }
 
+// ListStoredStatusReports lists SMS status reports (delivery reports) that the
+// modem has stored on the SIM/device. It is a fallback for firmware that stores
+// status reports instead of routing them to the client as transfer-route events.
+func (b *Backend) ListStoredStatusReports(ctx context.Context) ([]Message, error) {
+	mode := qcom.WMSMessageModeGW
+	var reports []Message
+	for _, storage := range []qcom.WMSStorage{qcom.WMSStorageUIM, qcom.WMSStorageNV} {
+		listed, err := b.client.WMSListMessages(ctx, qcom.WMSListRequest{Storage: storage, MessageMode: &mode})
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range listed {
+			raw, err := b.client.WMSReadRaw(ctx, qcom.WMSReadRequest{Reference: entry.Reference, MessageMode: &mode})
+			if err != nil {
+				continue
+			}
+			var part sms.Part
+			if err := part.UnmarshalBinary(raw.Data); err != nil {
+				continue
+			}
+			if !part.Message.DeliveryReport {
+				continue
+			}
+			part.Message.ID = messageID(entry.Reference)
+			part.Message.Storage = messageStorage(entry.Reference.Storage)
+			part.Message.Refs = []MessageRef{storedMessageRef(entry.Reference)}
+			part.Message.State = messageState(entry.Tag)
+			reports = append(reports, sms.CloneMessage(part.Message))
+		}
+	}
+	return reports, nil
+}
+
 func (b *Backend) ReadStoredMessage(ctx context.Context, ref MessageRef) (Message, error) {
 	reference, err := storedReference(ref)
 	if err != nil {

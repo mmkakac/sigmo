@@ -270,11 +270,18 @@ func (p *pendingDelivery) run(ctx context.Context) {
 				}
 			}
 		case <-timer.C:
-			// No status report within the timeout. Do not re-send: the message
-			// may have been delivered while the report was lost or the carrier
-			// returned no report at all.
-			slog.Warn("sms forward delivery report timed out; not re-sending", "to", p.to, "modem", p.path, "timeoutMinutes", p.policy.TimeoutMinutes)
-			return
+			// No status report within the timeout. A missing report means
+			// delivery is not confirmed, so retry up to the budget. With DLR
+			// enabled the normal delivered case is confirmed by a report and
+			// stops here; only genuinely-unreported deliveries are re-sent.
+			if attempt >= p.policy.MaxRetries {
+				slog.Warn("sms forward delivery report timed out after retries", "to", p.to, "modem", p.path, "attempts", attempt+1, "timeoutMinutes", p.policy.TimeoutMinutes)
+				return
+			}
+			slog.Warn("sms forward delivery report timed out, retrying", "to", p.to, "modem", p.path, "attempt", attempt+1, "timeoutMinutes", p.policy.TimeoutMinutes)
+			if sleepRelayContext(ctx, interval) != nil {
+				return
+			}
 		}
 	}
 }
@@ -324,7 +331,7 @@ func (r *Relay) onStatusReport(path, to string, final, delivered bool) {
 	p := r.pending[path+"\x00"+correlationNumber(to)]
 	r.pendingMu.Unlock()
 	if p == nil {
-		slog.Warn("status report did not match a pending forward", "modem", path, "to", to, "final", final, "delivered", delivered)
+		slog.Debug("status report did not match a pending forward", "modem", path, "to", to, "final", final, "delivered", delivered)
 		return
 	}
 	slog.Info("status report matched pending forward", "modem", path, "to", to, "final", final, "delivered", delivered)
@@ -552,6 +559,11 @@ func sleepRelayContext(ctx context.Context, delay time.Duration) error {
 // subscription loop, so reports are picked up even when the WMS service is not
 // yet ready at boot.
 func (r *Relay) watchStatusReports(ctx context.Context, m *modem.Modem) {
+	// Also poll stored status reports as a fallback for firmware that stores
+	// them instead of routing them to the client as transfer-route events.
+	r.wg.Add(1)
+	go r.pollStoredStatusReports(ctx, m)
+
 	for ctx.Err() == nil {
 		stream, err := m.WWAN().WatchStatusReports(ctx)
 		if err != nil {
@@ -583,6 +595,41 @@ func (r *Relay) watchStatusReports(ctx context.Context, m *modem.Modem) {
 					"modem", m.Path(), "mr", msg.MessageReference, "to", msg.Number,
 					"st", fmt.Sprintf("0x%02X", msg.DeliveryStatus),
 					"delivered", delivered, "final", final)
+				r.onStatusReport(m.Path(), msg.Number, final, delivered)
+			}
+		}
+	}
+}
+
+// pollStoredStatusReports periodically scans the modem's stored messages for
+// delivery reports so DLR still completes when reports are stored rather than
+// delivered as events. It never deletes messages, so it does not interfere with
+// the normal stored-message flow.
+func (r *Relay) pollStoredStatusReports(ctx context.Context, m *modem.Modem) {
+	defer r.wg.Done()
+	const pollInterval = 20 * time.Second
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reports, err := m.WWAN().ListStoredStatusReports(ctx)
+			if err != nil {
+				if !errors.Is(err, wwanmodem.ErrNotSupported) {
+					slog.Debug("stored status report poll failed", "error", err, "imei", m.EquipmentIdentifier)
+				}
+				continue
+			}
+			for _, msg := range reports {
+				final, delivered := classifyDeliveryStatus(msg.DeliveryStatus)
+				if !final {
+					continue
+				}
+				slog.Info("stored status report polled", "imei", m.EquipmentIdentifier,
+					"modem", m.Path(), "mr", msg.MessageReference, "to", msg.Number,
+					"st", fmt.Sprintf("0x%02X", msg.DeliveryStatus), "delivered", delivered)
 				r.onStatusReport(m.Path(), msg.Number, final, delivered)
 			}
 		}

@@ -28,7 +28,6 @@ const (
 	wmsIndicationCallStatus
 	wmsIndicationBroadcastConfig
 	wmsIndicationTransportMWI
-	wmsIndicationStatusReport
 )
 
 // WMSStorage identifies a modem SMS store.
@@ -350,7 +349,6 @@ type WMSEventReportConfig struct {
 	CallControlInfo  *bool
 	MessageWaiting   *bool
 	LowerLayerErrors *bool
-	StatusReports    *bool
 }
 
 // WMSACKRequest acknowledges a transfer-route SMS.
@@ -663,10 +661,6 @@ func (c *Client) WMSSetEventReport(ctx context.Context, config WMSEventReportCon
 	if config.LowerLayerErrors != nil {
 		tlvs = append(tlvs, tlv.Uint(0x13, boolByte(*config.LowerLayerErrors)))
 	}
-	if config.StatusReports != nil {
-		tlvs = append(tlvs, tlv.Uint(0x14, boolByte(*config.StatusReports)))
-	}
-
 	err := c.withServiceClient(ctx, ServiceWMS, func(clientID uint8) error {
 		resp, err := c.requestService(ctx, ServiceWMS, clientID, MessageWMSSetEventReport, tlvs)
 		if err != nil {
@@ -760,33 +754,22 @@ func (c *Client) WMSWatchStatusReports(ctx context.Context) (<-chan WMSStatusRep
 	if err != nil {
 		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
 	}
-	// Ask the modem to route status reports to this client instead of storing
-	// them on the SIM. This is best-effort: on firmware that does not support it,
-	// status reports still arrive as transfer-route message events on the shared
-	// MessageWMSEventReport stream, which we subscribe to below.
-	statusReportToClient := WMSStatusReportToClient
-	if err := c.WMSSetRoutes(ctx, nil, &statusReportToClient); err != nil {
-		log.Printf("wms: route status reports to client failed (continuing): %v", err)
-	}
-
+	// Status reports arrive on the same MessageWMSEventReport stream as incoming
+	// MT messages (as transfer-route events, or as stored events that we read
+	// back below). No separate routing or indication configuration is needed:
+	// the QMI "status report" event-report bit does not exist, and SetRoutes is
+	// rejected on several firmware versions, so we rely purely on the event stream.
 	watchCtx, cancel := context.WithCancel(ctx)
 	indications, err := transport.Indications(watchCtx, ServiceWMS, clientID, MessageWMSEventReport)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
 	}
-	// Enable the status-report indication bit if the modem accepts it. Do not
-	// fail the whole watcher when it is rejected: the report still arrives as a
-	// transfer-route event on the stream above.
-	if err := c.acquireWMSIndication(ctx, wmsIndicationStatusReport); err != nil {
-		log.Printf("wms: status report indication unavailable (continuing): %v", err)
-	}
 
 	out := make(chan WMSStatusReportEvent, 8)
 	go func() {
 		defer close(out)
 		defer cancel()
-		defer c.releaseWMSIndication(wmsIndicationStatusReport)
 		for indication := range indications {
 			var message WMSIncomingMessage
 			if err := message.UnmarshalTLVs(indication.TLVs); err != nil {
@@ -938,8 +921,6 @@ func (c *Client) setWMSIndication(ctx context.Context, registration wmsIndicatio
 		return c.WMSSetIndicationRegistration(ctx, WMSIndicationConfig{SMSCAddress: &enabled})
 	case wmsIndicationMemoryFull:
 		return c.WMSSetIndicationRegistration(ctx, WMSIndicationConfig{MemoryFull: &enabled})
-	case wmsIndicationStatusReport:
-		return c.WMSSetEventReport(ctx, WMSEventReportConfig{StatusReports: &enabled})
 	default:
 		return fmt.Errorf("setting QMI WMS indication: registration %d is out of range", registration)
 	}
