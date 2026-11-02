@@ -72,10 +72,8 @@ jobs:
           # 版本号命名的 txt：内容提示版本号和架构
           printf 'sigmo %s\nArchitecture: linux-arm64 (aarch64)\nChannel: stable\nEdition: community\n' "${version}" > "${version}.txt"
           # 压缩包带版本号；包内只有 sigmo 二进制 + 版本号 txt
-          mkdir -p dist
-          cp sigmo "${version}.txt" dist/
-          (cd dist && zip -r "../sigmo-${version}-linux-arm64-openwrt.zip" sigmo "${version}.txt")
-          ls -l sigmo "${version}.txt" "../sigmo-${version}-linux-arm64-openwrt.zip"
+          zip -r "sigmo-${version}-linux-arm64-openwrt.zip" sigmo "${version}.txt"
+          ls -l sigmo "${version}.txt" "sigmo-${version}-linux-arm64-openwrt.zip"
 
       - name: Inspect binary (confirm static)
         run: |
@@ -89,19 +87,3 @@ jobs:
           name: sigmo-linux-arm64-openwrt
           path: sigmo-*.zip
           if-no-files-found: error
-
-  # 可选：打 tag 时发一个 release 附上 OpenWrt 产物
-  release-openwrt:
-    name: Publish OpenWrt release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build-openwrt-armv8
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: sigmo-linux-arm64-openwrt
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: sigmo-*.zip
