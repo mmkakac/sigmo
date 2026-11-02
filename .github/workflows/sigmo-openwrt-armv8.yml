@@ -66,21 +66,28 @@ jobs:
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Distribution=${distribution}"
           # 全静态交叉编译：不需要 musl 解释器，不需要 libsqlite3
           # minimal tag：不编译 MCP/Agent Skills、更新设置、web push、native push，减小体积
+          # 二进制固定命名为 sigmo
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-           go build -tags minimal -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
-          #  go build -trimpath -ldflags="${ldflags}" -o sigmo-linux-arm64-openwrt .
+           go build -tags minimal -trimpath -ldflags="${ldflags}" -o sigmo .
+          # 版本号命名的 txt：内容提示版本号和架构
+          printf 'sigmo %s\nArchitecture: linux-arm64 (aarch64)\nChannel: stable\nEdition: community\n' "${version}" > "${version}.txt"
+          # 压缩包带版本号；包内只有 sigmo 二进制 + 版本号 txt
+          mkdir -p dist
+          cp sigmo "${version}.txt" dist/
+          (cd dist && zip -r "../sigmo-${version}-linux-arm64-openwrt.zip" sigmo "${version}.txt")
+          ls -l sigmo "${version}.txt" "../sigmo-${version}-linux-arm64-openwrt.zip"
 
       - name: Inspect binary (confirm static)
         run: |
-          file sigmo-linux-arm64-openwrt
+          file sigmo
           # 静态链接应输出 "not a dynamic executable"；若出现 interpreter 说明非静态，需排查
-          readelf -d sigmo-linux-arm64-openwrt 2>/dev/null | grep -iE "NEEDED|INTERP" || echo "OK: no dynamic deps / no interpreter (fully static)"
+          readelf -d sigmo 2>/dev/null | grep -iE "NEEDED|INTERP" || echo "OK: no dynamic deps / no interpreter (fully static)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: sigmo-linux-arm64-openwrt
-          path: sigmo-linux-arm64-openwrt
+          path: sigmo-*.zip
           if-no-files-found: error
 
   # 可选：打 tag 时发一个 release 附上 OpenWrt 产物
@@ -97,4 +104,4 @@ jobs:
           name: sigmo-linux-arm64-openwrt
       - uses: softprops/action-gh-release@v3
         with:
-          files: sigmo-linux-arm64-openwrt
+          files: sigmo-*.zip
