@@ -759,28 +759,23 @@ func (c *Client) WMSWatchStatusReports(ctx context.Context) (<-chan WMSStatusRep
 	if err != nil {
 		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
 	}
-	// Deliver status reports to this client instead of storing them on the SIM.
-	statusReportToClient := WMSStatusReportToClient
-	if err := c.WMSSetRoutes(ctx, nil, &statusReportToClient); err != nil {
-		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
-	}
-
+	// Status reports arrive on the same MessageWMSEventReport stream as
+	// incoming messages, so we only subscribe to that stream. The QMI "status
+	// report" event-report bit does not exist on this firmware and SetRoutes
+	// with an empty route table is rejected, so we must not issue either call
+	// (both fail and would break the subscription). Reports that the modem
+	// stores instead of routing are picked up by ListStoredStatusReports.
 	watchCtx, cancel := context.WithCancel(ctx)
 	indications, err := transport.Indications(watchCtx, ServiceWMS, clientID, MessageWMSEventReport)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("watching QMI WMS status reports: %w", err)
 	}
-	if err := c.acquireWMSIndication(ctx, wmsIndicationStatusReport); err != nil {
-		cancel()
-		return nil, err
-	}
 
 	out := make(chan WMSStatusReportEvent, 8)
 	go func() {
 		defer close(out)
 		defer cancel()
-		defer c.releaseWMSIndication(wmsIndicationStatusReport)
 		for indication := range indications {
 			var message WMSIncomingMessage
 			if err := message.UnmarshalTLVs(indication.TLVs); err != nil {

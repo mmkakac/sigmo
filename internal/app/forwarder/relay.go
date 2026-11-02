@@ -270,11 +270,19 @@ func (p *pendingDelivery) run(ctx context.Context) {
 				}
 			}
 		case <-timer.C:
-			// No status report within the timeout. Do not re-send: the message
-			// may have been delivered while the report was lost or the carrier
-			// returned no report at all.
-			slog.Warn("sms forward delivery report timed out; not re-sending", "to", p.to, "modem", p.path, "timeoutMinutes", p.policy.TimeoutMinutes)
-			return
+			// No delivery report within the timeout. A missing report means
+			// delivery is not confirmed, so re-send up to the retry budget.
+			// Delivered messages are normally confirmed by a stored status
+			// report, which stops here; only genuinely-unreported deliveries
+			// are re-sent.
+			if attempt >= p.policy.MaxRetries {
+				slog.Warn("sms forward delivery report timed out after retries", "to", p.to, "modem", p.path, "attempts", attempt+1, "timeoutMinutes", p.policy.TimeoutMinutes)
+				return
+			}
+			slog.Warn("sms forward delivery report timed out, retrying", "to", p.to, "modem", p.path, "attempt", attempt+1, "timeoutMinutes", p.policy.TimeoutMinutes)
+			if sleepRelayContext(ctx, interval) != nil {
+				return
+			}
 		}
 	}
 }
@@ -314,15 +322,35 @@ func (r *Relay) relayContext() context.Context {
 	return r.base
 }
 
+// findPending locates the pending forwarded delivery that a status report
+// belongs to. The report's stored number may be national (13750267346) or
+// international (8613750267346) regardless of the form the delivery was
+// submitted in, so it tolerates both when matching.
+func (r *Relay) findPending(path, to string) *pendingDelivery {
+	base := correlationNumber(to)
+	candidates := []string{base}
+	if strings.HasPrefix(base, "86") && len(base) > 11 {
+		candidates = append(candidates, base[2:]) // national form
+	} else if !strings.HasPrefix(base, "86") {
+		candidates = append(candidates, "86"+base) // try international form
+	}
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	for _, c := range candidates {
+		if p := r.pending[path+"\x00"+c]; p != nil {
+			return p
+		}
+	}
+	return nil
+}
+
 // onStatusReport matches a decoded SMS status report to a pending forwarded
 // delivery and signals the outcome to its owner goroutine.
 func (r *Relay) onStatusReport(path, to string, final, delivered bool) {
 	if !final {
 		return
 	}
-	r.pendingMu.Lock()
-	p := r.pending[path+"\x00"+correlationNumber(to)]
-	r.pendingMu.Unlock()
+	p := r.findPending(path, to)
 	if p == nil {
 		return
 	}
@@ -550,6 +578,13 @@ func sleepRelayContext(ctx context.Context, delay time.Duration) error {
 // subscription loop, so reports are picked up even when the WMS service is not
 // yet ready at boot.
 func (r *Relay) watchStatusReports(ctx context.Context, m *modem.Modem) {
+	// Also poll stored status reports as the delivery-report source: on this
+	// firmware the modem stores reports instead of routing them to the client,
+	// and the client sees them as an incoming empty SMS unless they are
+	// consumed here.
+	r.wg.Add(1)
+	go r.pollStoredStatusReports(ctx, m)
+
 	for ctx.Err() == nil {
 		stream, err := m.WWAN().WatchStatusReports(ctx)
 		if err != nil {
@@ -577,6 +612,42 @@ func (r *Relay) watchStatusReports(ctx context.Context, m *modem.Modem) {
 				}
 				msg := result.Value
 				final, delivered := classifyDeliveryStatus(msg.DeliveryStatus)
+				r.onStatusReport(m.Path(), msg.Number, final, delivered)
+			}
+		}
+	}
+}
+
+// pollStoredStatusReports periodically scans the modem's stored messages for
+// delivery reports (status reports) and routes each terminal outcome to the
+// matching pending forwarded delivery. It is the delivery-report source on
+// firmware that stores reports instead of routing them to the client. It never
+// deletes messages, so it does not interfere with the stored-message flow.
+func (r *Relay) pollStoredStatusReports(ctx context.Context, m *modem.Modem) {
+	defer r.wg.Done()
+	const pollInterval = 20 * time.Second
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reports, err := m.WWAN().ListStoredStatusReports(ctx)
+			if err != nil {
+				if !errors.Is(err, wwanmodem.ErrNotSupported) {
+					slog.Debug("stored status report poll failed", "error", err, "imei", m.EquipmentIdentifier)
+				}
+				continue
+			}
+			for _, msg := range reports {
+				final, delivered := classifyDeliveryStatus(msg.DeliveryStatus)
+				if !final {
+					continue
+				}
+				slog.Info("stored status report polled", "imei", m.EquipmentIdentifier,
+					"modem", m.Path(), "mr", msg.MessageReference, "to", msg.Number,
+					"st", fmt.Sprintf("0x%02X", msg.DeliveryStatus), "delivered", delivered)
 				r.onStatusReport(m.Path(), msg.Number, final, delivered)
 			}
 		}

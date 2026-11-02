@@ -873,6 +873,10 @@ func (m *Modem) WatchMessages(ctx context.Context) (<-chan Result[Message], erro
 // SMS delivery reports (status reports) for submitted messages.
 type statusReportBackend interface {
 	WatchStatusReports(context.Context) (<-chan Result[Message], error)
+	// ListStoredStatusReports returns delivery reports the modem has stored, as
+	// the delivery-report source for firmware that stores reports instead of
+	// routing them to the client. Backends may return ErrNotSupported.
+	ListStoredStatusReports(context.Context) ([]Message, error)
 }
 
 // WatchStatusReports streams SMS delivery reports for messages submitted with
@@ -889,6 +893,21 @@ func (m *Modem) WatchStatusReports(ctx context.Context) (<-chan Result[Message],
 		return nil, ErrNotSupported
 	}
 	return startModemStream(ctx, m.done, srb.WatchStatusReports)
+}
+
+// ListStoredStatusReports returns delivery reports stored on the modem. It is
+// the delivery-report source for firmware that stores reports instead of
+// routing them to the client as events.
+func (m *Modem) ListStoredStatusReports(ctx context.Context) ([]Message, error) {
+	b, err := m.currentBackend()
+	if err != nil {
+		return nil, err
+	}
+	srb, ok := b.(statusReportBackend)
+	if !ok {
+		return nil, ErrNotSupported
+	}
+	return srb.ListStoredStatusReports(ctx)
 }
 
 func (m *Modem) InitiateUSSD(ctx context.Context, text string) (USSDMessage, error) {
