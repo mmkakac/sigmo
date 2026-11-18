@@ -1,14 +1,19 @@
-# sigmo 社区版 —— OpenWrt ARMv8 (aarch64) 二进制编译 workflow（修正版）
+# sigmo 社区版 —— OpenWrt ARMv8 (aarch64) 二进制编译 workflow
 #
 # 放置位置：仓库根目录 .github/workflows/sigmo-openwrt-armv8.yml
 # 触发方式：手动触发（workflow_dispatch），或推送 v* 标签时触发并上传产物
 #
-# 为什么这一版去掉了 musl patch / -I 解释器：
-#   sigmo 社区版的 SQLite 用的是 ncruces/go-sqlite3 —— cgo-free 的 WASM 后端，
-#   SQLite 直接编译进二进制（纯 Go + x/sys），不 dlopen 任何外部库。
-#   purego（ebitengine/purego）只存在于 pro 版依赖（pro/go.mod）里，社区版没有。
-#   因此社区版产物是“全静态、自包含”的，OpenWrt(ARMv8/aarch64, musl) 无需安装任何运行时包，
-#   更不需要 libsqlite3（之前那个 "Unknown package 'libsqlite3'" 可以忽略，本来就不该装）。
+# 为什么需要 cgo + 静态链接（重要）：
+#   上游在 esimtransfer 里引入了 wwan-go/ccid -> goscard -> ebitengine/purego。
+#   purego 在 CGO_ENABLED=0 时会启用 internal/fakecgo，通过
+#   //go:cgo_import_dynamic 声明 libc.so.6 / libdl.so.2 / libpthread.so.0。
+#   于是产出的二进制会在 ELF 里带 INTERP=/lib/ld-linux-aarch64.so.1，
+#   在 OpenWrt（musl，无 glibc 加载器）上执行就变成 "sigmo: not found"。
+#
+#   所以这里改为 CGO_ENABLED=1 + aarch64 交叉编译器 + 外部链接静态化：
+#   purego 在 cgo=1 时走真实 cgo（不再生成动态导入声明），
+#   配合 -linkmode external -extldflags '-static' 得到完全静态的可执行文件，
+#   OpenWrt 上无需任何 libc / 加载器依赖。
 
 name: Build sigmo for OpenWrt ARMv8 (aarch64)
 
@@ -33,11 +38,17 @@ jobs:
       - name: Setup Bun (build frontend)
         uses: oven-sh/setup-bun@v2
 
-      # go-version-file 会按 go.mod 自动安装需要的 Go 工具链（go 1.27.x）
+      # go-version-file 会按 go.mod 自动安装需要的 Go 工具链
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
+      - name: Install aarch64 cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          aarch64-linux-gnu-gcc --version
 
       - name: Build frontend
         run: |
@@ -61,25 +72,36 @@ jobs:
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Version=${version}"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Commit=${GITHUB_SHA}"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Channel=stable"
-          ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Edition=community"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Target=linux-arm64"
           ldflags+=" -X github.com/damonto/sigmo/internal/app/buildinfo.Distribution=${distribution}"
-          # 全静态交叉编译：不需要 musl 解释器，不需要 libsqlite3
-          # minimal tag：不编译 MCP/Agent Skills、更新设置、web push、native push，减小体积
+          # netgo / osusergo：避免静态 glibc 触发 NSS、getpwnam 之类的动态行为
+          # -linkmode external -extldflags '-static'：交给交叉编译器做全静态链接
           # 二进制固定命名为 sigmo
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-           go build -tags minimal -trimpath -ldflags="${ldflags}" -o sigmo .
+          CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
+            go build -tags "netgo osusergo" -trimpath \
+            -ldflags "-linkmode external -extldflags '-static' ${ldflags}" -o sigmo .
           # 版本号命名的 txt：内容提示版本号和架构
-          printf 'sigmo %s\nArchitecture: linux-arm64 (aarch64)\nChannel: stable\nEdition: community\n' "${version}" > "${version}.txt"
+          printf 'sigmo %s\nArchitecture: linux-arm64 (aarch64)\nChannel: stable\n' "${version}" > "${version}.txt"
           # 压缩包带版本号；包内只有 sigmo 二进制 + 版本号 txt
           zip -r "sigmo-${version}-linux-arm64-openwrt.zip" sigmo "${version}.txt"
           ls -l sigmo "${version}.txt" "sigmo-${version}-linux-arm64-openwrt.zip"
 
-      - name: Inspect binary (confirm static)
+      - name: Verify binary is fully static
         run: |
           file sigmo
-          # 静态链接应输出 "not a dynamic executable"；若出现 interpreter 说明非静态，需排查
-          readelf -d sigmo 2>/dev/null | grep -iE "NEEDED|INTERP" || echo "OK: no dynamic deps / no interpreter (fully static)"
+          # 必须是 statically linked；若出现 interpreter / dynamically linked，直接失败，
+          # 避免再产出在 OpenWrt 上 "not found" 的二进制
+          if ! file sigmo | grep -q 'statically linked'; then
+            echo "ERROR: binary is not statically linked" >&2
+            readelf -l sigmo | grep -A1 INTERP || true
+            readelf -d sigmo || true
+            exit 1
+          fi
+          if readelf -l sigmo | grep -q INTERP; then
+            echo "ERROR: INTERP section present" >&2
+            exit 1
+          fi
+          echo "OK: fully static, no interpreter"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
